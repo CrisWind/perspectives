@@ -124,7 +124,7 @@ es.addEventListener("done", () => es.close());
 | `error` | `{message}` | 出错 |
 | `done` | `{status, cached?}` | 这一段结束。`cached: true` 表示是回放的缓存 |
 
-`quality.rejected` 的 `issues` 每项是 `{code, message, claim_text?, similar_to?}`，`code` 取值：`duplicate` 和已有论点重复、`stance_unjustified` 无理由改变立场、`persona` 偏离人设、`too_long` 超长、`no_challenge` 没有提出挑战、`format` 格式不可用。这是质量引擎在工作的直接证据，建议在界面或大屏上展示出来。
+`quality.rejected` 的 `issues` 每项是 `{code, message, claim_text?, similar_to?}`，`code` 取值：`duplicate` 和已有论点重复、`stance_unjustified` 无理由改变立场、`persona` 偏离人设、`stance_mismatch` 声明的立场和发言内容矛盾、`too_long` 超长、`no_challenge` 没有提出挑战、`format` 格式不可用。这是质量引擎在工作的直接证据，建议在界面或大屏上展示出来。
 
 `utterance.completed`：
 
@@ -133,7 +133,7 @@ es.addEventListener("done", () => es.close());
  "claims": [ /* 论点对象 */ ], "echoes": [{"claim_id": "c2", "text": "..."}],
  "stance": {"position": "support", "previous": "conditional", "changed": true, "justified": true,
      "reverted": false, "persuaded_by": "c1", "confidence": 0.6, "note": "一句话说明"},
- "attempts": 2, "degraded": false, "persona_flag": false, "provider": "deepseek", "focus_reason_id": "r2"}
+ "attempts": 2, "degraded": false, "persona_flag": false, "stance_mismatch": false, "provider": "deepseek", "focus_reason_id": "r2"}
 ```
 
 - `stance.position`：角色对"用户目前倾向"的态度，`support` / `oppose` / `conditional`。

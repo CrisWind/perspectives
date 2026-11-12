@@ -136,17 +136,19 @@ def persona_user(
     return "\n\n".join(parts)
 
 
-def judge(p: dict, fw: dict, speech: str, claims: list[dict], pool: list[dict]) -> tuple[str, str]:
-    system = """你是辩论质量检查员，做两件事，标准要严格但不要吹毛求疵。
+def judge(p: dict, fw: dict, speech: str, claims: list[dict], pool: list[dict], position: str) -> tuple[str, str]:
+    system = """你是辩论质量检查员，做三件事，标准要严格但不要吹毛求疵。
 1. 去重：判断每条"新论点"是不是和"论点池"里某条论点表达同一个意思。重复就给出池中那条的编号，否则给 null。
                         算重复：核心主张相同，只是换了说法或例子；或者只是表示赞同、把已有论点复述一遍。
                         不算重复：反驳或限定某条已有论点（指出它的漏洞、前提、例外）；给已有论点补上它没有的具体事实、数字或可执行的验证办法；提出池里没有的新因素（比如别人谈现金流，这条谈社保和工龄）；针对同一条理由但主张不同。
                         先在 adds 里写出新论点比最接近的那条多了什么实质内容，再下结论：adds 写得出实质内容就不是重复；拿不准时判不重复。
 2. 人设：判断发言是否符合给定角色的说话风格和思维框架。只有明显不符（比如冷静的角色在煽情、该用第一人称的没用、完全没用到思维框架）才判不符。
-只输出 JSON：{"claims": [{"index": 0, "closest": "池中最接近的论点编号或 null", "adds": "多出的实质内容，没有就写 无", "duplicate": false}], "persona": {"consistent": true, "issue": "不符时用一句话说明"}}"""
+3. 言行一致：角色声明的立场（对用户目前倾向的态度）和发言内容是否对得上。比如声明"支持"，发言却通篇在否定用户的倾向；或者声明"反对"，发言却在劝用户照做。只有明显矛盾才判不一致；"看条件"的立场只要发言里讲了条件就算一致。
+只输出 JSON：{"claims": [{"index": 0, "closest": "池中最接近的论点编号或 null", "adds": "多出的实质内容，没有就写 无", "duplicate": false}], "persona": {"consistent": true, "issue": "不符时用一句话说明"}, "stance": {"consistent": true, "issue": "矛盾时用一句话说明"}}"""
     user = (
         f"【角色】{p['name']}：{p.get('tagline', '')}。说话风格：{p.get('style', '')}\n"
         f"【思维框架】{fw['name']}：{fw['method']}\n"
+        f"【声明的立场】{position}（{POSITION_CN.get(position, position)}）\n"
         f"【发言】{speech}\n"
         "【新论点】\n" + "\n".join(f"- {i}：{c['text']}" for i, c in enumerate(claims)) + "\n"
         "【论点池】\n" + ("\n".join(f"- {c['id']}：{c['text']}" for c in pool[-40:]) or "（空）")

@@ -151,20 +151,21 @@ def revert_stance(stance: dict, prev: dict) -> None:
 
 
 async def judge(
-    llm: LLM, session_id: str, persona: dict, framework: dict, speech: str, claims: list[dict], pool: list[dict]
-) -> tuple[dict[int, str], str | None]:
-    """裁判模型：语义去重 + 人设检查。返回 ({论点下标: 与之重复的论点编号}, 人设问题或 None)。
+    llm: LLM, session_id: str, persona: dict, framework: dict, speech: str, claims: list[dict], pool: list[dict],
+    position: str,
+) -> tuple[dict[int, str], str | None, str | None]:
+    """裁判模型：语义去重、人设检查、言行一致检查。返回 ({论点下标: 与之重复的论点编号}, 人设问题, 立场与发言矛盾的问题)。
 
     裁判调用失败时不拦截发言（宁可放过，也不让整场辩论卡住）。
     """
-    system, user = prompts.judge(persona, framework, speech, claims, pool)
+    system, user = prompts.judge(persona, framework, speech, claims, pool, position)
     try:
         out, _ = await llm.json(
             "judge", system, user, provider=llm.judge, session_id=session_id, temperature=0.0, max_tokens=700,
             mock={"claims": claims},
         )
     except LLMError:
-        return dict(), None
+        return dict(), None, None
     ids = {c["id"] for c in pool}
     dups: dict[int, str] = dict()
     for item in out.get("claims") or []:
@@ -178,4 +179,8 @@ async def judge(
     issue = None
     if per.get("consistent") is False:
         issue = clip(str(per.get("issue") or "发言不符合人设"), 100)
-    return dups, issue
+    sj = out.get("stance") if isinstance(out.get("stance"), dict) else dict()
+    mismatch = None
+    if sj.get("consistent") is False:
+        mismatch = clip(str(sj.get("issue") or "声明的立场和发言内容矛盾"), 100)
+    return dups, issue, mismatch

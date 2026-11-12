@@ -16,7 +16,7 @@ from .util import clip, new_id
 
 log = logging.getLogger("perspectives.engine")
 
-_ID_REF = re.compile(r"(?<![A-Za-z0-9])([rcRC])(\d{1,3})(?![A-Za-z0-9])\s?")
+_ID_REF = re.compile(r" ?(?<![A-Za-z0-9])([rcRC])(\d{1,3})(?![A-Za-z0-9])\s?")
 VERDICTS = ("solid", "shaky", "weak")
 SLOW_EVENTS = ("utterance.completed", "quality.rejected", "card.ready")
 
@@ -488,6 +488,7 @@ class Debate:
             stance_issue = quality.check_stance(norm["stance"], prev, pid, self.pool)
             dups: dict[int, str] = dict()
             persona_issue = None
+            mismatch = None
             if self.engine_on:
                 for i, c in enumerate(norm["claims"]):
                     # 只和角色的论点比：回应用户插话时引用用户原话不算重复
@@ -495,8 +496,9 @@ class Debate:
                     if best is not None and score >= st.dup_hard:
                         dups[i] = best["id"]
                 fresh = [c for i, c in enumerate(norm["claims"]) if i not in dups]
-                jd, persona_issue = await quality.judge(svc.llm, self.sid, p, fw, norm["speech"], norm["claims"],
-        [c for c in self.pool if c["persona_id"] != "user"])
+                jd, persona_issue, mismatch = await quality.judge(svc.llm, self.sid, p, fw, norm["speech"], norm["claims"],
+        [c for c in self.pool if c["persona_id"] != "user"],
+                                        norm["stance"]["position"])
                 for i, d in jd.items():
                     dups.setdefault(i, d)
                 if kind != "independent":  # 第一轮互相看不到，撞车算"不谋而合"，不算重复
@@ -507,9 +509,11 @@ class Debate:
                     issues.append({"code": "persona", "message": "偏离人设：" + persona_issue})
                 if stance_issue:
                     issues.append(stance_issue)
+                if mismatch:
+                    issues.append({"code": "stance_mismatch", "message": "说一套、站一套：" + mismatch})
                 if need_challenge and not any(c["direction"] == "challenge" for c in fresh):
                     issues.append({"code": "no_challenge", "message": "没有提出针对用户倾向的挑战"})
-            this = {"norm": norm, "dups": dups, "persona_issue": persona_issue, "stance_issue": stance_issue,
+            this = {"norm": norm, "dups": dups, "persona_issue": persona_issue, "stance_issue": stance_issue, "mismatch": mismatch,
                     "fresh": len(norm["claims"]) - len(dups), "attempt": attempts}
             if cand is None or this["fresh"] >= cand["fresh"]:  # 降级时用新论点最多的那一次
                 cand = this
@@ -544,12 +548,14 @@ class Debate:
             src = next((c for c in self.pool if c["id"] == e["claim_id"]), None)
             if src is not None and pid not in src.setdefault("echoed_by", []):
                 src["echoed_by"].append(pid)
+        norm["stance"]["note"] = self._humanize(norm["stance"]["note"], pid)
         self.stance[pid] = norm["stance"]
         self.emit("utterance.completed", {
             "id": f"u{self.n_utt}", "round": self.round, "kind": kind, "persona_id": pid,
             "speech": clip(norm["speech"], int(st.speech_limit * 1.6)), "claims": claims, "echoes": echoes,
             "stance": norm["stance"], "attempts": attempts, "degraded": degraded,
-            "persona_flag": bool(degraded and cand["persona_issue"]), "provider": self.provider[pid],
+            "persona_flag": bool(degraded and cand["persona_issue"]),
+            "stance_mismatch": bool(degraded and cand["mismatch"]), "provider": self.provider[pid],
             "focus_reason_id": focus["id"] if focus else None,
         })
 
@@ -579,6 +585,14 @@ class Debate:
         text = _ID_REF.sub(sub, text)
         return re.sub(r"的观点 ?的", "的", text)
 
+    def _plain(self, v):
+        """决策卡里给用户看的文字不带内部编号（claim_ids、reason_id 这些字段保持原样）。"""
+        if isinstance(v, dict):
+            return {k: (x if k in ("claim_ids", "reason_id") else self._plain(x)) for k, x in v.items()}
+        if isinstance(v, list):
+            return [self._plain(x) for x in v]
+        return self._humanize(v, "") if isinstance(v, str) else v
+
     # ----- 决策卡 -----
     def _stance_summary(self) -> list[dict]:
         rows = self.svc.store.stances(self.sid)
@@ -606,7 +620,7 @@ class Debate:
             "card", system, user, provider=svc.llm.judge, session_id=self.sid, temperature=0.3, max_tokens=1800,
             mock={"reasons": self.s["reasons"], "pool": self.pool, "leaning": self.s.get("leaning")},
         )
-        card = self._clean_card(out)
+        card = self._plain(self._clean_card(out))
         pc = self.persona_claims()
         card["stances"] = summary
         card["stats"] = {
