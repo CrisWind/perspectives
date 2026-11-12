@@ -268,3 +268,28 @@ def test_parallel_batch_dedupes_against_each_other(tmp_path, monkeypatch):
     assert len(speakers) == 4
     assert len(first_round) == 2 + 3  # 第一位两条都留下，后三位各有一条和 c1 撞车
     assert first_round[0]["id"] == "c1" and sorted(first_round[0]["echoed_by"]) == sorted(speakers[1:])
+
+
+def test_same_batch_collisions_become_echoes(tmp_path, monkeypatch):
+    """同一批里两个角色说到一起去：后说的那条记为不谋而合，不进论点池。"""
+    from app import mock
+
+    def fake_cluster(c):
+        n = len(c["claims"])
+        return dict(groups=[[0, 2]] + [[i] for i in range(n) if i not in (0, 2)])
+
+    monkeypatch.setattr(mock, "_cluster", fake_cluster)
+
+    async def go():
+        svc = Services(make_settings(tmp_path))
+        try:
+            sid = await engine.run_headless(svc, "grad_or_job", dict(rounds=1))
+            return svc.store.claims(sid), svc.store.utterances(sid)
+        finally:
+            await svc.shutdown()
+
+    claims, utts = asyncio.run(go())
+    first_round = [c for c in claims if c["round"] == 1]
+    second = [u for u in utts if u["round"] == 1][1]
+    assert len(first_round) == 2 + 1 + 2 + 2
+    assert first_round[0]["echoed_by"] == [second["persona_id"]] and len(second["claim_ids"]) == 1

@@ -86,7 +86,7 @@ def normalize(out: dict, reasons: list[dict], pool_ids: set[str], limit: int) ->
         })
     if not claims:
         return None, [{"code": "format", "message": "没有可用的论点"}]
-    if len(speech) > limit * 1.25:
+    if len(speech) > limit * 1.3:
         issues.append({"code": "too_long", "message": f"发言 {len(speech)} 字，超过 {limit} 字的限制"})
     st = out.get("stance") if isinstance(out.get("stance"), dict) else dict()
     try:

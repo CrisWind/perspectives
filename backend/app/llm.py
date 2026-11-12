@@ -170,6 +170,7 @@ class LLM:
         max_tokens: int = 1400,
         json_mode: bool = False,
         mock: dict | None = None,
+        history: list[dict] | None = None,
     ) -> tuple[str, str]:
         if self.mock:
             if self.settings.mock_delay:
@@ -182,18 +183,18 @@ class LLM:
         for name in order:
             p = self.providers[name]
             try:
-                return await self._call(p, purpose, system, user, session_id, temperature, max_tokens, json_mode), name
+                return await self._call(p, purpose, system, user, session_id, temperature, max_tokens, json_mode, history), name
             except LLMError as e:
                 errors.append(f"{name}: {e}")
                 log.warning("provider %s failed for %s, trying next: %s", name, purpose, e)
         raise LLMError("all providers failed: " + " | ".join(errors))
 
-    async def _call(self, p: Provider, purpose, system, user, session_id, temperature, max_tokens, json_mode) -> str:
+    async def _call(self, p: Provider, purpose, system, user, session_id, temperature, max_tokens, json_mode, history=None) -> str:
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=self.settings.llm_timeout)
         body = {
             "model": p.model,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "messages": [dict(role="system", content=system)] + list(history or []) + [dict(role="user", content=user)],
             "temperature": temperature,
             "max_tokens": max_tokens,
             **p.extra,

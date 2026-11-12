@@ -59,11 +59,11 @@ def persona_system(p: dict, fw: dict, limit: int, patch: dict | None, search_on:
 常用追问：{moves}
 
 【规则】
-1. 你的任务是检验用户的理由，不是替用户做决定，更不是让用户高兴。用户同不同意都不影响你的判断。
+1. 你的任务是如实检验用户的理由，不是替用户做决定，也不是让用户高兴。检验不等于否定：理由经得起你的框架检验时，要明确说它站得住并说明为什么（direction 填 support）；经不起时指出具体问题。不要为了显得犀利硬挑毛病。用户同不同意都不影响你的判断。
 2. 只围绕这位用户的具体处境和理由说话，不讲放在谁身上都成立的大道理。
-3. 不编造数据、案例和引文。拿不准的数字要明说"这个需要核实"。
+3. 不编造数据、案例和引文。拿不准的数字要明说"这个需要核实"。涉及时间和金额的推算必须从用户给的事实出发并写出算法（比如“现在 11 月，考试在明年 12 月，约 13 个月”），不要随口给一个数。
 4. 每次发言只能做三件事：提出池子里没有的新论点、反驳已有论点、给已有论点补证据。意思和已有论点重复的话不要说。
-5. 立场指你对"用户目前倾向"的态度：support（支持）、oppose（反对）、conditional（看条件）。没有被说服就保持原立场；要改变立场，必须在 persuaded_by 里写出说服你的那条论点的编号，而且必须是别人的论点。
+5. 立场指你对"用户目前倾向"的态度：support（支持）、oppose（反对）、conditional（看条件）。没有被说服就保持原立场；要改变立场，必须在 persuaded_by 里写出说服你的那条论点的编号，而且必须是别人的论点。用户只是重申意愿或情绪、没有给出新的事实或论据时，不改变立场；用户给出了新的事实，就按新事实重新判断。用户的多数理由站得住时，立场应为 support。
 6. speech 是给用户看的话，保持你的说话风格，用"你"称呼用户。长度是硬性要求：不超过 {limit} 字，超过会被打回。一次只说最要紧的一两点，不要面面俱到。
 7. speech 里不要出现 r1、c3 这类编号，用户看不懂：提到理由时引用用户的原话，提到别人的论点时说角色的名字和大意。编号只填在 claims 的 reason_id 和 targets 字段里，claims 的 text 里也不要写编号。
 8. claims 是 speech 里实际提出的论点，每条一句话，1 到 3 条。"""
@@ -120,7 +120,7 @@ def persona_user(
             task += f"请重点检验理由 {focus['id']}「{focus['text']}」。"
         task += "至少有一条论点要回应别人的论点（反驳或补证据，填 targets）；可以再提一条池子里没有的新论点。"
         if kind == "followup":
-            task = f"【本轮】用户看完决策卡后提出了不同意见（见下）。请直接回应用户的话：他说得对的地方要承认，说得不对的地方要讲清楚为什么。"
+            task = f"【本轮】用户看完决策卡后提出了不同意见（见下）。请直接回应用户的话：他说得对的地方要承认，说得不对的地方要讲清楚为什么。用户只是重申想法、没有给出新事实时，不要改口附和，要说明你的判断为什么不变。"
         parts.append(task)
     if user_claims:
         parts.append("【用户插话】（必须回应，targets 填对应编号）\n" + "\n".join(f"- {c['id']}：{c['text']}" for c in user_claims))
@@ -169,6 +169,8 @@ def card(s: dict, pool: list[dict], names: dict[str, str], stances: list[str], p
 4. recommendations：带条件的建议，2 到 3 条，每条是"如果……（condition），那么……（suggestion）"。条件要具体到用户能自己判断是否成立。不要只给一个方向的建议，不要说"综合考虑"这类空话。
 5. next_steps：用户这周就能做的 1 到 3 件小事，用来验证关键条件。
 6. values：从用户的理由和回应里看出他真正看重的东西，2 到 4 个短词。
+7. 结论要如实：经过质疑仍然成立的理由给 solid，不要因为有人质疑过就一律判 shaky 或 weak；也不要因为用户想听就给 solid。理由大多站得住时，建议里要明确说可以按用户的倾向去做，并指出还需要留意什么。
+8. 数字和时间以用户给出的事实为准：角色之间说法不一致，或和用户给的事实对不上时，按用户的事实重新算；算不出来的不写具体数字，写“需要核实”。
 只根据辩论记录写，不加入记录里没有的事实。
 只输出 JSON：{"reason_checks": [{"reason_id": "r1", "verdict": "solid|shaky|weak", "summary": "...", "claim_ids": ["c1"]}], "blind_spots": [{"text": "...", "claim_ids": ["c2"]}], "core_tradeoff": {"a": "...", "b": "...", "summary": "..."}, "recommendations": [{"condition": "...", "suggestion": "..."}], "next_steps": ["..."], "values": ["..."]}"""
     user = _case(s) + "\n\n【论点池】\n" + _pool(pool, names, limit=80)
@@ -230,7 +232,7 @@ challenge 表示这条论点是否在质疑或挑战用户目前的倾向。
 
 
 def cluster(claims: list[str]) -> tuple[str, str]:
-    system = """下面是一场讨论里的论点。把表达同一个核心主张的论点分到一组（换了说法也算同一个）。每条论点必须且只能出现在一组里。
+    system = """下面是一场讨论里的论点。把表达同一个核心主张的论点分到一组（换了说法也算同一个；只是话题相同、主张不同的不算，拿不准就分开）。每条论点必须且只能出现在一组里。
 只输出 JSON：{"groups": [[0, 3], [1], [2, 4]]}，数字是论点的序号。"""
     return system, "\n".join(f"{i}：{c}" for i, c in enumerate(claims))
 
@@ -240,3 +242,12 @@ def persona_score(p: dict, fw: dict, speech: str) -> tuple[str, str]:
 只输出 JSON：{"consistent": true}"""
     user = f"【角色】{p['name']}：{p.get('tagline', '')}。风格：{p.get('style', '')}\n【思维框架】{fw['name']}：{fw['method']}\n【发言】{speech}"
     return system, user
+
+
+def lean(s: dict, text: str) -> tuple[str, str]:
+    system = """下面是给用户的一段答复。判断它对“用户目前的倾向”持什么态度：
+- support：明确赞成用户按现在的倾向去做，或者基本是在肯定、鼓励用户。
+- conditional：没有表态赞成或反对，而是说要看条件、要先核实某些事。
+- oppose：明确不赞成，或者劝用户先不要这样做。
+只输出 JSON：{"lean": "support|conditional|oppose"}"""
+    return system, _case(s) + "\n\n【答复】\n" + text

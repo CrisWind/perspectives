@@ -208,6 +208,8 @@ def mock_response(purpose: str, c: dict) -> dict:
         return _extract(c)
     if purpose == "cluster":
         return _cluster(c)
+    if purpose == "lean":
+        return dict(lean="conditional")
     if purpose == "persona_score":
         return {"consistent": True}
     return dict()

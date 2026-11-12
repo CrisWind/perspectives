@@ -501,7 +501,10 @@ class Debate:
                     j["stance_issue"] = quality.check_stance(
                         norm["stance"], self.stance.get(j["p"]["id"]), j["p"]["id"], self.pool
                     )
-            verdicts = await asyncio.gather(*(self._prejudge(pending, k) for k in range(len(pending))))
+            verdicts, mates = await asyncio.gather(
+                asyncio.gather(*(self._prejudge(pending, k) for k in range(len(pending)))),
+                self._batch_mates(pending),
+            )
             temp: dict[str, str] = dict()  # 本批里的临时编号 -> 入池后的正式编号
             still = []
             for k, (j, verdict) in enumerate(zip(pending, verdicts)):
@@ -514,13 +517,38 @@ class Debate:
     "issues": j["issues"],
                             })
                     still.append(j)
-                elif self._evaluate(j, verdict, temp):
+                elif self._evaluate(j, verdict, temp, k, mates):
                     self._commit(j, True, temp, k)
                 else:
                     still.append(j)
             pending = still
         for j in pending:
             self._commit(j, False)
+
+    async def _batch_mates(self, pending: list[dict]) -> dict:
+        """同一批角色互相看不到，容易说到一起去。用一次聚类找出撞车的论点。
+
+        返回 {(角色序号, 论点序号): (先说的角色序号, 论点序号)}，只记不同角色之间的撞车。
+        """
+        flat = [(k, i, c["text"]) for k, j in enumerate(pending) if j["norm"] for i, c in enumerate(j["norm"]["claims"])]
+        if not self.engine_on or len({k for k, _, _ in flat}) < 2:
+            return dict()
+        texts = [t for _, _, t in flat]
+        system, user = prompts.cluster(texts)
+        try:
+            out, _ = await self.svc.llm.json(
+                "cluster", system, user, provider=self.svc.llm.judge, session_id=self.sid, temperature=0.0,
+                max_tokens=500, mock=dict(claims=texts),
+            )
+        except LLMError:
+            return dict()
+        mates = dict()
+        for g in out.get("groups") or []:
+            g = sorted(x for x in g if isinstance(x, int) and 0 <= x < len(flat)) if isinstance(g, list) else []
+            for x in g[1:]:
+                if flat[x][0] != flat[g[0]][0]:
+                    mates[(flat[x][0], flat[x][1])] = (flat[g[0]][0], flat[g[0]][1])
+        return mates
 
     async def _prejudge(self, pending: list[dict], k: int) -> tuple:
         """裁判模型检查第 k 个角色的发言。同批里排在前面的发言用临时编号（t0_1 这种）一起放进论点池供比对。"""
@@ -538,7 +566,7 @@ class Debate:
             pool, j["norm"]["stance"]["position"],
         )
 
-    def _evaluate(self, j: dict, verdict: tuple, temp: dict[str, str]) -> bool:
+    def _evaluate(self, j: dict, verdict: tuple, temp: dict[str, str], k: int, mates: dict) -> bool:
         """汇总一条发言的全部质检结果。通过返回 True；不通过则记下打回原因并返回 False。"""
         st = self.svc.settings
         norm, pid, kind = j["norm"], j["p"]["id"], j["kind"]
@@ -556,8 +584,17 @@ class Debate:
                 d = temp.get(d, d)
                 if not d.startswith("t"):  # 仍是临时编号，说明对方那条发言没有入池，不算重复
                     dups.setdefault(i, d)
+            # 同一批里和别人撞车的论点：对方已入池的记为“不谋而合”，不算重复、不用重写
+            echo_only = set()
+            for (kk, i), (m, x) in mates.items():
+                d = temp.get(f"t{m}_{x}")
+                if kk == k and d and i not in dups:
+                    dups[i] = d
+                    echo_only.add(i)
+            if kind != "independent" and echo_only and len(dups) == len(norm["claims"]):
+                issues.append({"code": "duplicate", "message": "你这次的论点都和同一轮其他角色说到一起去了，换一个别人没提的角度"})
             if kind != "independent":  # 第一轮互相看不到，撞车算"不谋而合"，不算重复
-                for i, d in sorted(dups.items()):
+                for i, d in sorted((i, d) for i, d in dups.items() if i not in echo_only):
                     issues.append({
                         "code": "duplicate", "similar_to": d, "claim_text": norm["claims"][i]["text"],
                         "message": f"和已有论点 {d}「{clip(self._claim_text(d), 60)}」重复，换一个池子里没有的角度，或者直接反驳某条论点",

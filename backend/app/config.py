@@ -44,7 +44,7 @@ class Settings:
     max_retries: int = 2
     min_challenges: int = 3
     cross_parallel: int = 0  # 交叉质询每批同时发言的角色数，0 表示整轮一起
-    speech_limit: int = 320
+    speech_limit: int = 260
     dup_hard: float = 0.72  # 字面相似度超过此值直接判重
 
     # 模型
