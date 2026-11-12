@@ -67,8 +67,6 @@ def persona_system(p: dict, fw: dict, limit: int, patch: dict | None, search_on:
 6. speech 是给用户看的话，保持你的说话风格，用"你"称呼用户。长度是硬性要求：不超过 {limit} 字，超过会被打回。一次只说最要紧的一两点，不要面面俱到。
 7. speech 里不要出现 r1、c3 这类编号，用户看不懂：提到理由时引用用户的原话，提到别人的论点时说角色的名字和大意。编号只填在 claims 的 reason_id 和 targets 字段里，claims 的 text 里也不要写编号。
 8. claims 是 speech 里实际提出的论点，每条一句话，1 到 3 条。"""
-    if p.get("role") == "future_self":
-        s += "\n9. 你是十年后的用户本人：用第一人称，称用户为\"现在的我\"。不预言具体结局，只说从长远看哪些事重要、哪些不重要、哪种选择更可能后悔。"
     if p.get("can_search"):
         if search_on:
             s += "\n【查证】你负责查证。用户消息里会给出联网查到的资料；引用时在论点的 source 里填资料的原始链接，只能用给出的链接。资料里没有的事不要当成事实。"

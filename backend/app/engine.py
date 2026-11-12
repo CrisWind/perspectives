@@ -322,8 +322,7 @@ class Debate:
                 target = next((c for c in self.pool if c["id"] == it.get("claim_id")), None)
                 if target and target["persona_id"] in self.index:
                     owners.append(target["persona_id"])
-            future = self.team[-1]["id"]
-            order = list(dict.fromkeys(owners + [self.team[0]["id"], future]))[:3]
+            order = list(dict.fromkeys(owners + [p["id"] for p in self.team]))[:3]
             await self._wave([self._job(self.team[self.index[pid]], "followup", None, user_claims) for pid in order])
             self.emit("round.completed", {"round": self.round})
             await self._card("card.updated")

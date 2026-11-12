@@ -96,13 +96,13 @@ def test_normalize_and_sources():
 def test_team_selection():
     c = Content()
     for mbti in ("ENFP", "ISTJ", None, "xxxx"):
-        team = select_team(c, mbti, 3)
-        assert len(team) == 4 and team[-1]["role"] == "future_self"
+        team = select_team(c, mbti, 4)
+        assert len(team) == 4 and all(p["role"] == "debater" for p in team)
         assert any(p["can_search"] for p in team)
         assert len({p["framework"] for p in team}) == 4
-        assert [p["id"] for p in team] == [p["id"] for p in select_team(c, mbti, 3)]
+        assert [p["id"] for p in team] == [p["id"] for p in select_team(c, mbti, 4)]
     # 互补：和用户 MBTI 完全相同的角色不会被优先选中
-    assert "tantan" not in [p["id"] for p in select_team(c, "ENFP", 3)]
+    assert "tantan" not in [p["id"] for p in select_team(c, "ENFP", 4)]
 
 
 # ---------- 全流程 ----------
@@ -241,7 +241,7 @@ def test_prompt_version_gate_and_rollback(tmp_path):
 def test_health_and_content(client):
     h = client.get("/api/health").json()
     assert h["ok"] and h["llm"]["mock"] is True
-    assert len(client.get("/api/personas").json()["personas"]) == 9
+    assert len(client.get("/api/personas").json()["personas"]) == 8
     assert len(client.get("/api/presets").json()["presets"]) == 6
 
 

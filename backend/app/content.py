@@ -36,8 +36,6 @@ class Content:
             p.setdefault("rank", 50)
             self.personas[p["id"]] = p
         self.presets: dict[str, dict] = {p["id"]: p for p in data["presets"]}
-        if not any(p["role"] == "future_self" for p in self.personas.values()):
-            raise ValueError("personas.yaml needs one persona with role: future_self")
 
     def framework_of(self, persona: dict) -> dict:
         return self.frameworks[persona["framework"]]
@@ -56,14 +54,14 @@ class Content:
 
 
 def select_team(content: Content, mbti: str | None, size: int, team_ids: list[str] | None = None) -> list[dict]:
-    """按 MBTI 互补挑人：字母差异越多越优先，保证有一位查证员，框架不重复；最后加上"未来的自己"。
+    """按 MBTI 互补挑人：字母差异越多越优先，保证有一位查证员，框架不重复。
 
     结果是确定的（同样的输入得到同样的队伍），快速模式的缓存依赖这一点。
     """
-    future = next(p for p in content.personas.values() if p["role"] == "future_self")
     if team_ids:
-        chosen = [content.personas[i] for i in team_ids if i in content.personas and i != future["id"]]
-        return chosen + [future]
+        picked = [content.personas[i] for i in team_ids if i in content.personas]
+        if picked:
+            return picked
     debaters = sorted((p for p in content.personas.values() if p["role"] == "debater"), key=lambda p: p["rank"])
     mbti = norm_mbti(mbti)
     if mbti:
@@ -84,4 +82,4 @@ def select_team(content: Content, mbti: str | None, size: int, team_ids: list[st
             continue
         chosen.append(p)
     chosen.sort(key=lambda p: ranked.index(p))
-    return chosen[:size] + [future]
+    return chosen[:size]

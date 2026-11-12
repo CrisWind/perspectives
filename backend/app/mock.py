@@ -111,7 +111,7 @@ def _speak(c: dict) -> dict:
         }
 
     prev = c.get("prev_stance")
-    position = prev["position"] if prev else ("conditional" if p["role"] == "future_self" else POSITIONS[idx % 5])
+    position = prev["position"] if prev else POSITIONS[idx % 5]
     persuaded = None
     note = f"{p['name']}按{fw['name']}的判断"
     if idx == 1 and rnd == 2 and prev:
@@ -121,10 +121,7 @@ def _speak(c: dict) -> dict:
             note = f"被 {persuaded} 说服，调整了看法"
         else:
             note = "想了想，改主意了"
-    if p["role"] == "future_self":
-        speech = "现在的我，听我说：" + "；".join(x["text"] for x in claims)
-    else:
-        speech = f"（{p['name']}）" + "；".join(x["text"] for x in claims)
+    speech = f"（{p['name']}）" + "；".join(x["text"] for x in claims)
     return {
         "speech": clip(speech, 300), "claims": claims,
         "stance": {"position": position, "confidence": 0.6, "persuaded_by": persuaded, "note": note},

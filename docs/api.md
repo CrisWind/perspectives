@@ -72,7 +72,7 @@ POST /api/sessions/{id}/feedback  反馈
  "framework": {"id": "premortem", "name": "事前验尸", "method": "..."}}
 ```
 
-`role` 为 `future_self` 的是"未来的你"，每场都在，排在最后。`provider` 是这个角色用的模型。
+`provider` 是这个角色用的模型。
 
 论点（论证图的节点）：
 

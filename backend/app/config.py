@@ -38,7 +38,7 @@ class Settings:
     admin_token: str = ""
 
     # 辩论
-    team_size: int = 3
+    team_size: int = 4
     deep_rounds: int = 3
     quick_rounds: int = 2
     max_retries: int = 2
