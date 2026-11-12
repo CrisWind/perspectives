@@ -43,6 +43,7 @@ class Settings:
     quick_rounds: int = 2
     max_retries: int = 2
     min_challenges: int = 3
+    cross_parallel: int = 0  # 交叉质询每批同时发言的角色数，0 表示整轮一起
     speech_limit: int = 320
     dup_hard: float = 0.72  # 字面相似度超过此值直接判重
 
@@ -75,6 +76,7 @@ class Settings:
         s.quick_rounds = _int("QUICK_ROUNDS", s.quick_rounds)
         s.max_retries = _int("MAX_RETRIES", s.max_retries)
         s.min_challenges = _int("MIN_CHALLENGES", s.min_challenges)
+        s.cross_parallel = _int("CROSS_PARALLEL", s.cross_parallel)
         s.force_mock = _bool("LLM_MOCK")
         s.persona_providers = _list("PERSONA_PROVIDERS")
         s.judge_provider = os.environ.get("JUDGE_PROVIDER", "")

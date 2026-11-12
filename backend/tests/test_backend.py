@@ -243,3 +243,28 @@ def test_health_and_content(client):
     assert h["ok"] and h["llm"]["mock"] is True
     assert len(client.get("/api/personas").json()["personas"]) == 9
     assert len(client.get("/api/presets").json()["presets"]) == 6
+
+
+def test_parallel_batch_dedupes_against_each_other(tmp_path, monkeypatch):
+    """同一批并行发言的角色，后面的发言要能和前面的比对（用临时编号），重复的记为不谋而合。"""
+
+    async def fake_judge(llm, sid, persona, fw, speech, claims, pool, position):
+        temp = [c["id"] for c in pool if c["id"].startswith("t")]
+        return (dict([(0, temp[0])]) if temp else dict()), None, None
+
+    monkeypatch.setattr(quality, "judge", fake_judge)
+
+    async def go():
+        svc = Services(make_settings(tmp_path))
+        try:
+            sid = await engine.run_headless(svc, "grad_or_job", dict(rounds=1))
+            return svc.store.claims(sid), svc.store.utterances(sid)
+        finally:
+            await svc.shutdown()
+
+    claims, utts = asyncio.run(go())
+    first_round = [c for c in claims if c["round"] == 1]
+    speakers = [u["persona_id"] for u in utts if u["round"] == 1]
+    assert len(speakers) == 4
+    assert len(first_round) == 2 + 3  # 第一位两条都留下，后三位各有一条和 c1 撞车
+    assert first_round[0]["id"] == "c1" and sorted(first_round[0]["echoed_by"]) == sorted(speakers[1:])

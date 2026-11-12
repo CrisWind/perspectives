@@ -324,8 +324,7 @@ class Debate:
                     owners.append(target["persona_id"])
             future = self.team[-1]["id"]
             order = list(dict.fromkeys(owners + [self.team[0]["id"], future]))[:3]
-            for pid in order:
-                await self._turn(self.team[self.index[pid]], "followup", None, user_claims=user_claims)
+            await self._wave([self._job(self.team[self.index[pid]], "followup", None, user_claims) for pid in order])
             self.emit("round.completed", {"round": self.round})
             await self._card("card.updated")
             self.svc.emit(self.sid, "status", {"status": "completed"})
@@ -391,15 +390,18 @@ class Debate:
         return out
 
     # ----- 各轮 -----
+    def _job(self, p: dict, kind: str, focus: dict | None = None, user_claims: list[dict] | None = None,
+        need_challenge: bool = False) -> dict:
+        return {
+            "p": p, "kind": kind, "focus": focus, "user_claims": user_claims or [],
+            "need_challenge": need_challenge, "rejection": None, "cand": None, "attempts": 0,
+            "norm": None, "issues": [], "stance_issue": None,
+        }
+
     async def _round_independent(self) -> None:
         self.round = 1
         self.emit("round.started", {"round": 1, "kind": "independent"})
-        for p in self.team:
-            self.emit("utterance.started", {"persona_id": p["id"], "round": 1})
-        drafts = await asyncio.gather(*(self._generate(p, "independent", None, [], False, None, 0) for p in self.team),
-                        return_exceptions=True)
-        for p, d in zip(self.team, drafts):
-            await self._turn(p, "independent", None, draft=d if isinstance(d, dict) else None, announced=True)
+        await self._wave([self._job(p, "independent") for p in self.team])
         self.emit("round.completed", {"round": 1})
 
     async def _round_cross(self) -> None:
@@ -410,10 +412,15 @@ class Debate:
         shift = (self.round - 2) % len(self.team)
         order = self.team[shift:] + self.team[:shift]
         counts = {r["id"]: sum(1 for c in self.pool if c.get("reason_id") == r["id"]) for r in self.s["reasons"]}
+        jobs = []
         for p in order:
             focus = min(self.s["reasons"], key=lambda r: counts[r["id"]])
             counts[focus["id"]] += 2
-            await self._turn(p, "cross", focus, user_claims=user_claims)
+            jobs.append(self._job(p, "cross", focus, user_claims))
+        # 同一批的角色同时发言，看到的是上一批结束时的论点池；批内撞车由质检拦下后重写
+        size = self.svc.settings.cross_parallel or len(jobs)
+        for i in range(0, len(jobs), size):
+            await self._wave(jobs[i : i + size])
         self.emit("round.completed", {"round": self.round})
 
     async def _challenge_floor(self) -> None:
@@ -424,18 +431,21 @@ class Debate:
             return
         self.round += 1
         self.emit("round.started", {"round": self.round, "kind": "challenge", "have": have, "need": need})
-        ranked = sorted(self.team, key=lambda p: (self.stance.get(p["id"], dict()).get("position") == "support", self.index[p["id"]]))
-        for p in ranked[:2]:
-            await self._turn(p, "cross", None, need_challenge=True)
+
+        def rank(p: dict) -> tuple:
+            return (self.stance.get(p["id"], dict()).get("position") == "support", self.index[p["id"]])
+
+        ranked = sorted(self.team, key=rank)
+        await self._wave([self._job(p, "cross", need_challenge=True) for p in ranked[:2]])
         self.emit("round.completed", {"round": self.round})
 
-    # ----- 一次发言 -----
+    # ----- 发言 -----
     async def _generate(self, p: dict, kind: str, focus: dict | None, user_claims: list[dict],
-                        need_challenge: bool, rejection: list[dict] | None, attempt: int) -> dict:
+        need_challenge: bool, rejection: list[dict] | None, attempt: int) -> dict:
         svc = self.svc
         fw = svc.content.framework_of(p)
         system = prompts.persona_system(p, fw, svc.settings.speech_limit, self.patches.get(p["id"]), svc.search.enabled)
-        visible = [] if kind == "independent" else self.pool
+        visible = [] if kind == "independent" else list(self.pool)
         user = prompts.persona_user(
             self.s, rnd=self.round, kind=kind, pool=visible, names=self.names,
             prev_stance=self.stance.get(p["id"]), focus=focus,
@@ -446,103 +456,168 @@ class Debate:
         out, _ = await svc.llm.json(
             "speak", system, user, provider=self.provider[p["id"]], session_id=self.sid,
             temperature=0.8 if attempt == 0 else 0.9, max_tokens=900,
-            mock={"persona": p, "framework": fw, "index": self.index[p["id"]], "round": self.round, "kind": kind,
-    "attempt": attempt, "reasons": self.s["reasons"], "pool": visible, "focus": focus,
-    "prev_stance": self.stance.get(p["id"]), "user_claims": user_claims},
+            mock={
+                "persona": p, "framework": fw, "index": self.index[p["id"]], "round": self.round, "kind": kind,
+                "attempt": attempt, "reasons": self.s["reasons"], "pool": visible, "focus": focus,
+                "prev_stance": self.stance.get(p["id"]), "user_claims": user_claims,
+            },
         )
         return out
 
-    async def _turn(self, p: dict, kind: str, focus: dict | None, *, draft: dict | None = None,
-                    user_claims: list[dict] | None = None, need_challenge: bool = False,
-                    announced: bool = False) -> None:
-        svc, st, pid = self.svc, self.svc.settings, p["id"]
-        fw = svc.content.framework_of(p)
-        user_claims = user_claims or []
-        prev = self.stance.get(pid)
-        if not announced:
-            self.emit("utterance.started", {"persona_id": pid, "round": self.round})
+    async def _wave(self, jobs: list[dict]) -> None:
+        """一批角色同时发言：并行生成、并行质检，再按顺序逐个入池。没过的一起重写，最多重写 max_retries 次。
+
+        并行是提速的关键：一轮的耗时从"每个角色的生成加质检之和"降到"最慢的那一个"。
+        """
+        st = self.svc.settings
+        for j in jobs:
+            self.emit("utterance.started", {"persona_id": j["p"]["id"], "round": self.round})
         allowed = {r["url"] for r in self.search_results}
         retries = st.max_retries if self.engine_on else 0
-        rejection: list[dict] | None = None
-        cand: dict | None = None  # 最近一次格式可用的发言
-        accepted = False
-        attempts = 0
+        pending = list(jobs)
         for attempt in range(retries + 1):
-            attempts = attempt + 1
-            if attempt == 0 and draft is not None:
-                out = draft
-            else:
-                try:
-                    out = await self._generate(p, kind, focus, user_claims, need_challenge, rejection, attempt)
-                except LLMError as e:
-                    log.warning("generation failed for %s: %s", pid, e)
-                    continue
-            norm, issues = quality.normalize(out, self.s["reasons"], {c["id"] for c in self.pool}, st.speech_limit)
-            if norm is None:
-                rejection = issues
-                if self.engine_on:
-                    self.emit("quality.rejected", {"persona_id": pid, "round": self.round, "attempt": attempts, "issues": issues})
-                continue
-            issues += quality.check_sources(norm["claims"], allowed)
-            issues = [i for i in issues if i["code"] != "fake_source"]  # 假来源直接去掉，不值得重写
-            stance_issue = quality.check_stance(norm["stance"], prev, pid, self.pool)
-            dups: dict[int, str] = dict()
-            persona_issue = None
-            mismatch = None
-            if self.engine_on:
-                for i, c in enumerate(norm["claims"]):
-                    # 只和角色的论点比：回应用户插话时引用用户原话不算重复
-                    best, score = quality.most_similar(c["text"], self.persona_claims())
-                    if best is not None and score >= st.dup_hard:
-                        dups[i] = best["id"]
-                fresh = [c for i, c in enumerate(norm["claims"]) if i not in dups]
-                jd, persona_issue, mismatch = await quality.judge(svc.llm, self.sid, p, fw, norm["speech"], norm["claims"],
-        [c for c in self.pool if c["persona_id"] != "user"],
-                                        norm["stance"]["position"])
-                for i, d in jd.items():
-                    dups.setdefault(i, d)
-                if kind != "independent":  # 第一轮互相看不到，撞车算"不谋而合"，不算重复
-                    for i, d in sorted(dups.items()):
-                        issues.append({"code": "duplicate", "message": f"和已有论点 {d}「{clip(self._claim_text(d), 60)}」重复，换一个池子里没有的角度，或者直接反驳某条论点", "similar_to": d,
-                                "claim_text": norm["claims"][i]["text"]})
-                if persona_issue:
-                    issues.append({"code": "persona", "message": "偏离人设：" + persona_issue})
-                if stance_issue:
-                    issues.append(stance_issue)
-                if mismatch:
-                    issues.append({"code": "stance_mismatch", "message": "说一套、站一套：" + mismatch})
-                if need_challenge and not any(c["direction"] == "challenge" for c in fresh):
-                    issues.append({"code": "no_challenge", "message": "没有提出针对用户倾向的挑战"})
-            this = {"norm": norm, "dups": dups, "persona_issue": persona_issue, "stance_issue": stance_issue, "mismatch": mismatch,
-                    "fresh": len(norm["claims"]) - len(dups), "attempt": attempts}
-            if cand is None or this["fresh"] >= cand["fresh"]:  # 降级时用新论点最多的那一次
-                cand = this
-            if not self.engine_on or not issues:
-                accepted, cand = True, this
+            if not pending:
                 break
-            rejection = issues
-            self.emit("quality.rejected", {"persona_id": pid, "round": self.round, "attempt": attempts,
-        "issues": issues, "speech": clip(norm["speech"], 200)})
+            outs = await asyncio.gather(
+                *(
+                    self._generate(j["p"], j["kind"], j["focus"], j["user_claims"], j["need_challenge"],
+                        j["rejection"], attempt)
+                    for j in pending
+                ),
+                return_exceptions=True,
+            )
+            pool_ids = {c["id"] for c in self.pool}
+            for j, out in zip(pending, outs):
+                j["attempts"] = attempt + 1
+                j["norm"], j["issues"], j["stance_issue"] = None, [], None
+                if isinstance(out, BaseException):
+                    if not isinstance(out, Exception):
+                        raise out
+                    log.warning("generation failed for %s: %s", j["p"]["id"], out)
+                    continue
+                norm, issues = quality.normalize(out, self.s["reasons"], pool_ids, st.speech_limit)
+                j["norm"], j["issues"] = norm, issues
+                if norm is not None:
+                    quality.check_sources(norm["claims"], allowed)  # 假来源直接去掉，不值得重写
+                    j["stance_issue"] = quality.check_stance(
+                        norm["stance"], self.stance.get(j["p"]["id"]), j["p"]["id"], self.pool
+                    )
+            verdicts = await asyncio.gather(*(self._prejudge(pending, k) for k in range(len(pending))))
+            temp: dict[str, str] = dict()  # 本批里的临时编号 -> 入池后的正式编号
+            still = []
+            for k, (j, verdict) in enumerate(zip(pending, verdicts)):
+                if j["norm"] is None:
+                    if j["issues"]:
+                        j["rejection"] = j["issues"]
+                        if self.engine_on:
+                            self.emit("quality.rejected", {
+    "persona_id": j["p"]["id"], "round": self.round, "attempt": j["attempts"],
+    "issues": j["issues"],
+                            })
+                    still.append(j)
+                elif self._evaluate(j, verdict, temp):
+                    self._commit(j, True, temp, k)
+                else:
+                    still.append(j)
+            pending = still
+        for j in pending:
+            self._commit(j, False)
+
+    async def _prejudge(self, pending: list[dict], k: int) -> tuple:
+        """裁判模型检查第 k 个角色的发言。同批里排在前面的发言用临时编号（t0_1 这种）一起放进论点池供比对。"""
+        j = pending[k]
+        if not self.engine_on or j["norm"] is None:
+            return dict(), None, None
+        pool = [c for c in self.pool if c["persona_id"] != "user"]
+        for m in range(k):
+            other = pending[m]["norm"]
+            if other is not None:
+                pool += [{"id": f"t{m}_{i}", "text": c["text"]} for i, c in enumerate(other["claims"])]
+        p = j["p"]
+        return await quality.judge(
+            self.svc.llm, self.sid, p, self.svc.content.framework_of(p), j["norm"]["speech"], j["norm"]["claims"],
+            pool, j["norm"]["stance"]["position"],
+        )
+
+    def _evaluate(self, j: dict, verdict: tuple, temp: dict[str, str]) -> bool:
+        """汇总一条发言的全部质检结果。通过返回 True；不通过则记下打回原因并返回 False。"""
+        st = self.svc.settings
+        norm, pid, kind = j["norm"], j["p"]["id"], j["kind"]
+        issues = list(j["issues"])
+        dups: dict[int, str] = dict()
+        persona_issue = mismatch = None
+        if self.engine_on:
+            for i, c in enumerate(norm["claims"]):
+                # 只和角色的论点比：回应用户插话时引用用户原话不算重复
+                best, score = quality.most_similar(c["text"], self.persona_claims())
+                if best is not None and score >= st.dup_hard:
+                    dups[i] = best["id"]
+            jd, persona_issue, mismatch = verdict
+            for i, d in jd.items():
+                d = temp.get(d, d)
+                if not d.startswith("t"):  # 仍是临时编号，说明对方那条发言没有入池，不算重复
+                    dups.setdefault(i, d)
+            if kind != "independent":  # 第一轮互相看不到，撞车算"不谋而合"，不算重复
+                for i, d in sorted(dups.items()):
+                    issues.append({
+                        "code": "duplicate", "similar_to": d, "claim_text": norm["claims"][i]["text"],
+                        "message": f"和已有论点 {d}「{clip(self._claim_text(d), 60)}」重复，换一个池子里没有的角度，或者直接反驳某条论点",
+                    })
+            if persona_issue:
+                issues.append({"code": "persona", "message": "偏离人设：" + persona_issue})
+            if j["stance_issue"]:
+                issues.append(j["stance_issue"])
+            if mismatch:
+                issues.append({"code": "stance_mismatch", "message": "说一套、站一套：" + mismatch})
+            fresh = [c for i, c in enumerate(norm["claims"]) if i not in dups]
+            if j["need_challenge"] and not any(c["direction"] == "challenge" for c in fresh):
+                issues.append({"code": "no_challenge", "message": "没有提出针对用户倾向的挑战"})
+        this = {
+            "norm": norm, "dups": dups, "persona_issue": persona_issue, "stance_issue": j["stance_issue"],
+            "mismatch": mismatch, "fresh": len(norm["claims"]) - len(dups), "attempts": j["attempts"],
+        }
+        if not self.engine_on or not issues:
+            j["cand"] = this
+            return True
+        if j["cand"] is None or this["fresh"] >= j["cand"]["fresh"]:  # 降级时用新论点最多的那一次
+            j["cand"] = this
+        j["rejection"] = issues
+        self.emit("quality.rejected", {
+            "persona_id": pid, "round": self.round, "attempt": j["attempts"], "issues": issues,
+            "speech": clip(norm["speech"], 200),
+        })
+        return False
+
+    def _commit(self, j: dict, accepted: bool, temp: dict[str, str] | None = None, k: int = 0) -> None:
+        """发言入池并通知前端。accepted 为 False 表示重写次数用完后的降级处理。"""
+        st = self.svc.settings
+        pid, kind, cand, focus = j["p"]["id"], j["kind"], j["cand"], j["focus"]
         if cand is None:
             self.emit("utterance.dropped", {"persona_id": pid, "round": self.round, "reason": "多次生成失败"})
             return
         norm, dups = cand["norm"], cand["dups"] if self.engine_on else dict()
+        prev = self.stance.get(pid)
         degraded = not accepted
         if degraded and cand["stance_issue"] and prev:
             quality.revert_stance(norm["stance"], prev)
         echoes = [{"claim_id": d, "text": norm["claims"][i]["text"]} for i, d in sorted(dups.items())]
-        kept = [c for i, c in enumerate(norm["claims"]) if i not in dups]
-        if not kept and kind != "independent":
+        if len(dups) == len(norm["claims"]) and kind != "independent":
             self.emit("utterance.dropped", {"persona_id": pid, "round": self.round, "reason": "重写后仍然没有新论点"})
             return
         norm["speech"] = self._humanize(norm["speech"], pid)
-        for c in kept:
-            c["text"] = self._humanize(c["text"], pid)
         self.n_utt += 1
         claims = []
-        for c in kept:
+        for i, c in enumerate(norm["claims"]):
+            if i in dups:
+                if temp is not None:
+                    temp[f"t{k}_{i}"] = dups[i]
+                continue
             self.n_claim += 1
-            claims.append(dict(c, id=f"c{self.n_claim}", round=self.round, persona_id=pid, echoed_by=[]))
+            cid = f"c{self.n_claim}"
+            if temp is not None:
+                temp[f"t{k}_{i}"] = cid
+            text = self._humanize(c["text"], pid)
+            claims.append(dict(c, text=text, id=cid, round=self.round, persona_id=pid, echoed_by=[]))
         self.pool.extend(claims)
         for e in echoes:
             src = next((c for c in self.pool if c["id"] == e["claim_id"]), None)
@@ -553,7 +628,7 @@ class Debate:
         self.emit("utterance.completed", {
             "id": f"u{self.n_utt}", "round": self.round, "kind": kind, "persona_id": pid,
             "speech": clip(norm["speech"], int(st.speech_limit * 1.6)), "claims": claims, "echoes": echoes,
-            "stance": norm["stance"], "attempts": attempts, "degraded": degraded,
+            "stance": norm["stance"], "attempts": cand["attempts"], "degraded": degraded,
             "persona_flag": bool(degraded and cand["persona_issue"]),
             "stance_mismatch": bool(degraded and cand["mismatch"]), "provider": self.provider[pid],
             "focus_reason_id": focus["id"] if focus else None,
