@@ -8,7 +8,8 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import dataclass
+import json as jsonlib
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -26,6 +27,12 @@ KNOWN = {
     "moonshot": ("https://api.moonshot.cn/v1", "moonshot-v1-32k"),
     "doubao": ("https://ark.cn-beijing.volces.com/api/v3", ""),
     "openai": ("https://api.openai.com/v1", ""),
+    "mimo": ("https://api.xiaomimimo.com/v1", "mimo-v2.6-pro"),
+}
+# 各家特有的请求参数。MiMo 默认开启深度思考：会占用输出额度、拖慢速度，并且思考模式下温度不可调，所以默认关掉。
+# 可用 名字_EXTRA_BODY 环境变量（JSON）覆盖，例如 MIMO_EXTRA_BODY={"thinking":{"type":"enabled"}}
+DEFAULT_EXTRA = {
+    "mimo": {"thinking": {"type": "disabled"}},
 }
 
 
@@ -40,6 +47,7 @@ class Provider:
     api_key: str
     model: str
     json_mode: bool = True
+    extra: dict = field(default_factory=dict)
 
 
 def load_providers() -> list[Provider]:
@@ -59,7 +67,14 @@ def load_providers() -> list[Provider]:
         if not base or not model:
             log.warning("provider %s skipped: needs %s_BASE_URL and %s_MODEL", name, name.upper(), name.upper())
             continue
-        out.append(Provider(name, base.rstrip("/"), key, model))
+        extra = dict(DEFAULT_EXTRA.get(name) or dict())
+        raw = os.environ.get(f"{name.upper()}_EXTRA_BODY", "").strip()
+        if raw:
+            try:
+                extra = dict(jsonlib.loads(raw))
+            except (ValueError, TypeError):
+                log.warning("%s_EXTRA_BODY is not a JSON object, ignored", name.upper())
+        out.append(Provider(name, base.rstrip("/"), key, model, extra=extra))
     return out
 
 
@@ -181,6 +196,7 @@ class LLM:
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "temperature": temperature,
             "max_tokens": max_tokens,
+            **p.extra,
         }
         headers = {"Authorization": f"Bearer {p.api_key}", "Content-Type": "application/json"}
         err = "unknown"

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 
 from . import evolution, prompts, quality
 from .config import Settings
@@ -15,6 +16,7 @@ from .util import clip, new_id
 
 log = logging.getLogger("perspectives.engine")
 
+_ID_REF = re.compile(r"(?<![A-Za-z0-9])([rcRC])(\d{1,3})(?![A-Za-z0-9])\s?")
 VERDICTS = ("solid", "shaky", "weak")
 SLOW_EVENTS = ("utterance.completed", "quality.rejected", "card.ready")
 
@@ -499,7 +501,7 @@ class Debate:
                     dups.setdefault(i, d)
                 if kind != "independent":  # 第一轮互相看不到，撞车算"不谋而合"，不算重复
                     for i, d in sorted(dups.items()):
-                        issues.append({"code": "duplicate", "message": f"和已有论点 {d} 重复", "similar_to": d,
+                        issues.append({"code": "duplicate", "message": f"和已有论点 {d}「{clip(self._claim_text(d), 60)}」重复，换一个池子里没有的角度，或者直接反驳某条论点", "similar_to": d,
                                 "claim_text": norm["claims"][i]["text"]})
                 if persona_issue:
                     issues.append({"code": "persona", "message": "偏离人设：" + persona_issue})
@@ -507,9 +509,12 @@ class Debate:
                     issues.append(stance_issue)
                 if need_challenge and not any(c["direction"] == "challenge" for c in fresh):
                     issues.append({"code": "no_challenge", "message": "没有提出针对用户倾向的挑战"})
-            cand = {"norm": norm, "dups": dups, "persona_issue": persona_issue, "stance_issue": stance_issue}
+            this = {"norm": norm, "dups": dups, "persona_issue": persona_issue, "stance_issue": stance_issue,
+                    "fresh": len(norm["claims"]) - len(dups), "attempt": attempts}
+            if cand is None or this["fresh"] >= cand["fresh"]:  # 降级时用新论点最多的那一次
+                cand = this
             if not self.engine_on or not issues:
-                accepted = True
+                accepted, cand = True, this
                 break
             rejection = issues
             self.emit("quality.rejected", {"persona_id": pid, "round": self.round, "attempt": attempts,
@@ -526,6 +531,9 @@ class Debate:
         if not kept and kind != "independent":
             self.emit("utterance.dropped", {"persona_id": pid, "round": self.round, "reason": "重写后仍然没有新论点"})
             return
+        norm["speech"] = self._humanize(norm["speech"], pid)
+        for c in kept:
+            c["text"] = self._humanize(c["text"], pid)
         self.n_utt += 1
         claims = []
         for c in kept:
@@ -544,6 +552,32 @@ class Debate:
             "persona_flag": bool(degraded and cand["persona_issue"]), "provider": self.provider[pid],
             "focus_reason_id": focus["id"] if focus else None,
         })
+
+    def _claim_text(self, cid: str) -> str:
+        return next((c["text"] for c in self.pool if c["id"] == cid), "")
+
+    def _humanize(self, text: str, speaker: str) -> str:
+        """把 r1、c3 这类内部编号换成用户看得懂的说法。"""
+        reasons = {r["id"]: r["text"] for r in self.s["reasons"]}
+        owners = {c["id"]: c["persona_id"] for c in self.pool}
+
+        def sub(m: re.Match) -> str:
+            key = m.group(1).lower() + m.group(2)
+            if key in reasons:
+                if text[m.end():m.end() + 1] in ("「", "“", "\"", "'"):
+                    return ""  # 后面紧跟着原话引用，编号直接去掉
+                return "「" + clip(reasons[key], 20) + "」"
+            owner = owners.get(key)
+            if owner is None:
+                return m.group(0)
+            if owner == "user":
+                return "你刚才说的"
+            if owner == speaker:
+                return "我前面说的"
+            return self.names.get(owner, "别人") + "的观点"
+
+        text = _ID_REF.sub(sub, text)
+        return re.sub(r"的观点 ?的", "的", text)
 
     # ----- 决策卡 -----
     def _stance_summary(self) -> list[dict]:

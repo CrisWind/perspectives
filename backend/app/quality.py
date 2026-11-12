@@ -86,7 +86,7 @@ def normalize(out: dict, reasons: list[dict], pool_ids: set[str], limit: int) ->
         })
     if not claims:
         return None, [{"code": "format", "message": "没有可用的论点"}]
-    if len(speech) > limit * 1.6:
+    if len(speech) > limit * 1.25:
         issues.append({"code": "too_long", "message": f"发言 {len(speech)} 字，超过 {limit} 字的限制"})
     st = out.get("stance") if isinstance(out.get("stance"), dict) else dict()
     try:
@@ -160,7 +160,7 @@ async def judge(
     system, user = prompts.judge(persona, framework, speech, claims, pool)
     try:
         out, _ = await llm.json(
-            "judge", system, user, provider=llm.judge, session_id=session_id, temperature=0.0, max_tokens=500,
+            "judge", system, user, provider=llm.judge, session_id=session_id, temperature=0.0, max_tokens=700,
             mock={"claims": claims},
         )
     except LLMError:
@@ -170,7 +170,8 @@ async def judge(
     for item in out.get("claims") or []:
         if not isinstance(item, dict):
             continue
-        i, d = item.get("index"), item.get("duplicate_of")
+        i = item.get("index")
+        d = item.get("closest") if item.get("duplicate") is True else item.get("duplicate_of")
         if isinstance(i, int) and 0 <= i < len(claims) and isinstance(d, str) and d in ids:
             dups[i] = d
     per = out.get("persona") if isinstance(out.get("persona"), dict) else dict()
