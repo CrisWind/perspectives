@@ -1,0 +1,74 @@
+# 预设难题卡（快速模式用，也是评测和提示词门槛测试的默认题）。初版，供产品同学修改。
+# category: study 升学 / job 求职 / switch 跳槽 / city 换城市 / other 其他
+- id: grad_or_job
+  title: 考研还是直接工作
+  category: study
+  dilemma: 我大四了，手里有一个二线城市的普通 offer，同时在纠结要不要二战考研。
+  leaning: 倾向二战考研
+  reasons:
+    - 本科学历在我这个行业不够用，读研后起点更高
+    - 现在的 offer 薪资一般，不甘心
+    - 身边同学大多在读研，我不想落后
+  facts:
+    - 第一次考研差了 12 分
+    - 家里可以支持一年的生活费
+- id: bigtech_or_startup
+  title: 大厂还是创业公司
+  category: job
+  dilemma: 我同时拿到了大厂的边缘业务 offer 和一家 30 人创业公司的核心岗位 offer。
+  leaning: 倾向去创业公司
+  reasons:
+    - 在创业公司能负责核心业务，成长更快
+    - 大厂的那个部门是边缘业务，可能被裁
+    - 创业公司给了期权，万一成了回报很大
+  facts:
+    - 大厂的现金薪资比创业公司高 30%
+    - 创业公司刚完成 A 轮融资
+- id: quit_stable_job
+  title: 要不要离开稳定的工作
+  category: switch
+  dilemma: 我在国企工作两年了，工作稳定但没什么成长，想辞职转行做产品经理。
+  leaning: 倾向辞职转行
+  reasons:
+    - 现在的工作一眼能看到头，学不到东西
+    - 我对互联网产品一直感兴趣
+    - 趁年轻试错成本低
+  facts:
+    - 没有产品经理的实习或项目经历
+    - 存款够生活六个月
+- id: big_city_or_home
+  title: 留在大城市还是回老家
+  category: city
+  dilemma: 我在上海工作三年，房租占了收入的四成，父母希望我回老家省会。
+  leaning: 倾向回老家
+  reasons:
+    - 在上海买不起房，看不到扎根的希望
+    - 父母年纪大了，回去方便照顾
+    - 老家生活成本低，压力小
+  facts:
+    - 老家同类岗位的薪资大约是现在的一半
+    - 目前没有对象
+- id: abroad_or_domestic
+  title: 出国读研还是国内读研
+  category: study
+  dilemma: 我拿到了英国一年制硕士的录取，同时也有本校保研的资格。
+  leaning: 倾向出国读一年制硕士
+  reasons:
+    - 一年就能毕业，比国内读研省两年时间
+    - 想出去看看，开阔眼界
+    - 学校的排名比本校高
+  facts:
+    - 出国总花费大约 40 万，需要家里出
+    - 毕业后打算回国工作
+- id: offer_or_wait
+  title: 接受现有 offer 还是继续等
+  category: job
+  dilemma: 秋招快结束了，我手里只有一个不太满意的 offer，对方要求一周内答复，我最想去的公司还没出结果。
+  leaning: 倾向拒掉这个 offer 继续等
+  reasons:
+    - 这个 offer 的岗位和我想做的方向不一致
+    - 最想去的公司面试感觉不错，应该有希望
+    - 先签了再毁约会影响学校的信誉
+  facts:
+    - 最想去的公司没有给出明确的结果时间
+    - 春招的岗位通常比秋招少

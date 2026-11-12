@@ -1,0 +1,17 @@
+.env
+*.env.local
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.db
+*.db-wal
+*.db-shm
+backend/data/
+backend/eval_out/
+node_modules/
+dist/
+.DS_Store
+.vscode/
+.idea/
+.scratch/
