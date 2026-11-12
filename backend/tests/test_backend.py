@@ -241,7 +241,7 @@ def test_prompt_version_gate_and_rollback(tmp_path):
 def test_health_and_content(client):
     h = client.get("/api/health").json()
     assert h["ok"] and h["llm"]["mock"] is True
-    assert len(client.get("/api/personas").json()["personas"]) == 8
+    assert len(client.get("/api/personas").json()["personas"]) == 16
     assert len(client.get("/api/presets").json()["presets"]) == 6
 
 

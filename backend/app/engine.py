@@ -643,10 +643,9 @@ class Debate:
 
         def sub(m: re.Match) -> str:
             key = m.group(1).lower() + m.group(2)
-            if key in reasons:
-                if text[m.end():m.end() + 1] in ("「", "“", "\"", "'"):
-                    return ""  # 后面紧跟着原话引用，编号直接去掉
-                return "「" + clip(reasons[key], 20) + "」"
+            if key in reasons:  # 界面上理由是按顺序列出来的，说"第二条理由"比重复引用原话更顺
+                n = int(key[1:])
+                return "第" + ("一二三四五六"[n - 1] if 1 <= n <= 6 else str(n)) + "条理由"
             owner = owners.get(key)
             if owner is None:
                 return m.group(0)

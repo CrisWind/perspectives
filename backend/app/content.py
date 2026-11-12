@@ -68,7 +68,10 @@ def select_team(content: Content, mbti: str | None, size: int, team_ids: list[st
         def diff(p: dict) -> int:
             return sum(1 for a, b in zip(p["mbti"], mbti) if a != b)
 
-        ranked = sorted(debaters, key=lambda p: (-diff(p), p["rank"]))
+        def tie(p: dict) -> str:  # 差异相同时按固定的伪随机顺序排，让每个角色都有出场机会
+            return hashlib.sha1((mbti + p["id"]).encode()).hexdigest()
+
+        ranked = sorted(debaters, key=lambda p: (-diff(p), tie(p)))
     else:
         ranked = debaters
     chosen: list[dict] = []
