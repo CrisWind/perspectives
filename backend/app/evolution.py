@@ -114,6 +114,9 @@ async def apply_feedback(svc, sid: str, items: list[dict], user_id: str | None =
         if not first or session.get("mode") == "eval":
             continue  # 改标签只更新记录，不重复计入进化
         persona = svc.content.personas.get(claim["persona_id"])
+        custom = (session.get("options") or dict()).get("custom_persona")
+        if not persona and custom and custom["id"] == claim["persona_id"]:
+            persona = custom
         fw_id = persona["framework"] if persona else None
         positive = label in POSITIVE
         for exp_id in applied.get(claim["persona_id"], []):
@@ -121,8 +124,8 @@ async def apply_feedback(svc, sid: str, items: list[dict], user_id: str | None =
         if prof is not None and fw_id:
             fw = prof["frameworks"].setdefault(fw_id, {"valued": 0, "useless": 0})
             fw["valued" if positive else "useless"] += 1
-        if not positive:
-            continue
+        if not positive or (persona and persona.get("custom")):
+            continue  # 用户自建角色的论点只记个人偏好，不进共享经验库
         if claim["direction"] == "support":
             result["skipped_support"] += 1
             store.log_evolution("group", "skipped_support", "一条支持用户倾向的论点被标为有价值，按防讨好规则不进经验库",

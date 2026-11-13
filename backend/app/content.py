@@ -44,8 +44,8 @@ class Content:
         fw = self.framework_of(p)
         out = {
             "id": p["id"], "name": p["name"], "mbti": p.get("mbti") or None, "role": p["role"],
-            "tagline": p.get("tagline", ""), "avatar": p.get("avatar", ""), "color": p.get("color", ""),
-            "can_search": bool(p.get("can_search")),
+            "tagline": p.get("tagline", ""), "look": p.get("look", ""), "avatar": p.get("avatar", ""), "color": p.get("color", ""),
+            "can_search": bool(p.get("can_search")), "custom": bool(p.get("custom")),
             "framework": {"id": fw["id"], "name": fw["name"], "method": fw["method"]},
         }
         if provider:
@@ -53,7 +53,8 @@ class Content:
         return out
 
 
-def select_team(content: Content, mbti: str | None, size: int, team_ids: list[str] | None = None) -> list[dict]:
+def select_team(content: Content, mbti: str | None, size: int, team_ids: list[str] | None = None,
+                avoid: list[str] | None = None) -> list[dict]:
     """按 MBTI 互补挑人：字母差异越多越优先，保证有一位查证员，框架不重复。
 
     结果是确定的（同样的输入得到同样的队伍），快速模式的缓存依赖这一点。
@@ -75,14 +76,17 @@ def select_team(content: Content, mbti: str | None, size: int, team_ids: list[st
     else:
         ranked = debaters
     chosen: list[dict] = []
-    searcher = next((p for p in ranked if p["can_search"]), None)
+    taken = set(avoid or [])
+    searcher = next((p for p in ranked if p["can_search"] and p["framework"] not in taken), None)
     if searcher:
         chosen.append(searcher)
+        taken.add(searcher["framework"])
     for p in ranked:
         if len(chosen) >= size:
             break
-        if p in chosen or any(c["framework"] == p["framework"] for c in chosen):
+        if p in chosen or p["framework"] in taken:
             continue
+        taken.add(p["framework"])
         chosen.append(p)
     chosen.sort(key=lambda p: ranked.index(p))
     return chosen[:size]

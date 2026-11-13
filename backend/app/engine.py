@@ -82,6 +82,22 @@ class Services:
 
 
 # ---------- 创建与澄清 ----------
+def _custom_persona(svc: Services, raw: dict) -> dict:
+    """用户自建的第五位辩手。思维框架只能从现有的 16 个里选，保证提示词和前端展示都能对上。"""
+    fw = raw.get("framework")
+    if fw not in svc.content.frameworks:
+        raise ValueError("custom_persona.framework must be an id from GET /api/personas")
+    name = (raw.get("name") or "").strip()
+    if not name:
+        raise ValueError("custom_persona.name is required")
+    return {
+        "id": "u_" + new_id("", 8), "name": clip(name, 12), "role": "debater", "framework": fw,
+        "mbti": norm_mbti(raw.get("mbti")), "tagline": clip(raw.get("tagline") or "", 60),
+        "style": clip(raw.get("style") or "", 120), "look": clip(raw.get("look") or "", 120),
+        "can_search": False, "rank": 999, "color": "", "custom": True,
+    }
+
+
 def _reason_list(texts: list[str]) -> list[dict]:
     clean = [clip(t, 200) for t in texts if isinstance(t, str) and t.strip()]
     return [{"id": f"r{i + 1}", "text": t} for i, t in enumerate(clean[:6])]
@@ -110,13 +126,18 @@ async def create_session(svc: Services, req: dict) -> dict:
     mode = req.get("mode") if req.get("mode") in ("quick", "deep", "eval") else "deep"
     opts = dict(req.get("options") or dict())
     opts.setdefault("quality_engine", True)
+    custom = _custom_persona(svc, req["custom_persona"]) if req.get("custom_persona") else None
+    if custom:
+        opts["custom_persona"] = custom
     sid = new_id("s_", 20)
     user_id = req.get("user_id") or None
     mbti = norm_mbti(req.get("mbti"))
     if user_id and not mbti:
         mbti = (svc.store.get_profile(user_id) or dict()).get("mbti")
+    texts = [custom[k] for k in ("name", "tagline", "style", "look")] if custom else []
     if not req.get("preset_id"):
-        texts = [req.get("dilemma"), req.get("leaning"), *(req.get("reasons") or []), *(req.get("facts") or [])]
+        texts = [req.get("dilemma"), req.get("leaning"), *(req.get("reasons") or []), *(req.get("facts") or []), *texts]
+    if texts:
         crisis = await safety.check(svc.llm, [t for t in texts if isinstance(t, str)], sid)
         if crisis:
             return _stop_for_safety(svc, dict(id=sid, user_id=user_id, mode=mode, mbti=mbti), crisis)
@@ -247,7 +268,11 @@ class Debate:
         self.engine_on = bool(self.opts.get("quality_engine", True))
         default_rounds = st.quick_rounds if session["mode"] == "quick" else st.deep_rounds
         self.rounds = max(1, min(5, int(self.opts.get("rounds") or default_rounds)))
-        self.team = select_team(svc.content, session.get("mbti"), st.team_size, self.opts.get("team"))
+        self.custom = self.opts.get("custom_persona")
+        avoid = [self.custom["framework"]] if self.custom else []
+        self.team = select_team(svc.content, session.get("mbti"), st.team_size, self.opts.get("team"), avoid)
+        if self.custom:
+            self.team = [*self.team, self.custom]
         self.names = {p["id"]: p["name"] for p in self.team}
         self.provider = {p["id"]: svc.llm.persona_provider(i) for i, p in enumerate(self.team)}
         self.index = {p["id"]: i for i, p in enumerate(self.team)}
@@ -297,7 +322,7 @@ class Debate:
             self.emit("status", {"status": "running"})
             cacheable = (
                 self.s["mode"] == "quick" and self.s.get("preset_id") and self.engine_on
-                and self.opts.get("use_cache", True)
+                and self.opts.get("use_cache", True) and not self.custom
             )
             cached = self.svc.store.get_preset_run(self.cache_key()) if cacheable else None
             if cached:

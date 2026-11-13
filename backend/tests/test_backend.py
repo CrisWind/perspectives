@@ -460,3 +460,48 @@ def test_call_limits_stop_spending(tmp_path, monkeypatch):
             await llm.text("t", "s", "u", session_id="s1")
     asyncio.run(go())
     assert len(hits) == 4
+
+
+CUSTOM = {"name": "老周", "framework": "first_principles", "mbti": "ISTP", "tagline": "爱算账的老同事",
+          "style": "说话直，爱用数字", "look": "戴眼镜的中年人"}
+
+
+def test_custom_persona_joins_as_fifth_debater(client):
+    r = client.post("/api/sessions", json={
+        "dilemma": "我在国企工作两年，想辞职转行做产品经理", "leaning": "倾向辞职",
+        "reasons": ["现在的工作学不到东西", "趁年轻试错成本低"], "mbti": "ENFP", "user_id": "u1",
+        "custom_persona": CUSTOM,
+    })
+    assert r.status_code == 200, r.text
+    sid = r.json()["id"]
+    assert "custom_persona" not in r.json().get("options", {})
+    assert client.post(f"/api/sessions/{sid}/start").status_code == 200
+    s = wait_done(client, sid)
+    assert s["status"] == "completed"
+    team = [e for e in client.get(f"/api/sessions/{sid}/events?format=json").json()["events"] if e["type"] == "team.selected"][0]["data"]["team"]
+    assert len(team) == 5 and team[-1]["name"] == "老周" and team[-1]["custom"] is True
+    assert sum(1 for p in team if p["framework"]["id"] == "first_principles") == 1
+    mine = team[-1]["id"]
+    assert any(u["persona_id"] == mine for u in s["utterances"])
+    claim = next(c for c in s["claims"] if c["persona_id"] == mine and c["direction"] == "challenge")
+    r = client.post(f"/api/sessions/{sid}/feedback", json={"items": [{"claim_id": claim["id"], "label": "valuable"}]}).json()
+    assert r["accepted"] == 1 and r["learned"] == [] and r["reinforced"] == []
+
+
+def test_custom_persona_validation_and_quick_mode(client):
+    bad = dict(CUSTOM, framework="no_such_framework")
+    r = client.post("/api/quick", json={"preset_id": client.get("/api/presets").json()["presets"][0]["id"], "custom_persona": bad})
+    assert r.status_code == 400
+    r = client.post("/api/quick", json={"preset_id": client.get("/api/presets").json()["presets"][0]["id"], "custom_persona": CUSTOM})
+    assert r.status_code == 200, r.text
+    s = wait_done(client, r.json()["id"])
+    ev = client.get(f"/api/sessions/{s['id']}/events?format=json").json()["events"]
+    assert [e for e in ev if e["type"] == "team.selected"][0]["data"]["team"][-1]["name"] == "老周"
+    assert client.post("/api/sessions", json={"dilemma": "要不要换城市工作", "custom_persona": dict(CUSTOM, name="")}).status_code == 422
+
+
+def test_custom_persona_text_goes_through_safety_check(client):
+    r = client.post("/api/sessions", json={
+        "dilemma": "我在国企工作两年，想辞职转行做产品经理", "custom_persona": dict(CUSTOM, style="我不想活了，总想自杀"),
+    })
+    assert r.status_code == 200 and r.json()["status"] == "safety"

@@ -22,6 +22,15 @@ from .quality import similarity
 log = logging.getLogger("perspectives.api")
 
 
+class CustomPersonaIn(BaseModel):
+    name: str = Field(min_length=1, max_length=12)
+    framework: str = Field(max_length=40)
+    mbti: str | None = Field(default=None, max_length=4)
+    tagline: str = Field(default="", max_length=60)
+    style: str = Field(default="", max_length=120)
+    look: str = Field(default="", max_length=120)
+
+
 class SessionIn(BaseModel):
     dilemma: str = Field(default="", max_length=1500)
     leaning: str = Field(default="", max_length=300)
@@ -32,6 +41,7 @@ class SessionIn(BaseModel):
     mode: str = "deep"
     preset_id: str | None = Field(default=None, max_length=64)
     options: dict = Field(default_factory=dict)
+    custom_persona: CustomPersonaIn | None = None
 
     @field_validator("reasons", "facts")
     @classmethod
@@ -43,6 +53,7 @@ class QuickIn(BaseModel):
     preset_id: str
     mbti: str | None = Field(default=None, max_length=4)
     user_id: str | None = Field(default=None, max_length=64)
+    custom_persona: CustomPersonaIn | None = None
 
 
 class Answer(BaseModel):

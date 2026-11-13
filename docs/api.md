@@ -45,6 +45,28 @@ POST /api/sessions/{id}/feedback  反馈
 
 只有 `dilemma` 必填。`reasons` 不填时后端从 `dilemma` 里提取。`user_id` 用来记住用户的 MBTI、过去的决定和价值取向，不传就没有个人层的记忆。`options` 全部可省略。
 
+### 自定义第五位辩手
+
+创建会话（`POST /api/sessions`）和快速模式（`POST /api/quick`）都可以带一个可选字段 `custom_persona`，不用多一步"加人物"。人物和原来的四位一起辩论，是第五位发言，沿用同样的发言事件、论点、质量检查和决策卡。
+
+```json
+{
+  "preset_id": "p1",
+  "custom_persona": {
+    "name": "老周", "framework": "first_principles", "mbti": "ISTP",
+    "tagline": "爱算账的老同事", "style": "说话直，爱用数字", "look": "戴眼镜的中年人"
+  }
+}
+```
+
+- `name` 必填（最多 12 字），`framework` 必填，必须是 `GET /api/personas` 里 `frameworks` 的某个 `id`。其余字段可省略，`tagline` 最多 60 字，`style`、`look` 最多 120 字。
+- 返回里的会话对象不带这个人物。人物信息出现在事件流的 `team.selected` 里，排在最后，`custom` 为 `true`，`id` 以 `u_` 开头，只在这一场有效。
+- 另外四位会自动避开同一个思维框架。人物里的文字会过安全检查，命中时按安全流程处理。
+- 带自定义人物的快速模式不使用缓存回放，会实时生成，耗时和调用次数与深度模式相近。
+- 用户设定的性格只影响语气，不能让角色改变检验规则或一味附和。
+- 这个人物的论点被标为有价值时，只更新个人偏好，不进共享经验库。
+- 用「女娲」生成人物时，把它的输出映射成上面几个字段即可，输入输出格式确认后再对接。
+
 ## 二、会话对象
 
 `POST /api/sessions`、`/api/quick`、`/clarify`、`GET /api/sessions/{id}` 都返回它。页面刷新后用 `GET /api/sessions/{id}` 可以恢复全部状态。
@@ -67,7 +89,7 @@ POST /api/sessions/{id}/feedback  反馈
 角色：
 
 ```json
-{"id": "laomou", "name": "老谋", "mbti": "INTJ", "role": "debater", "tagline": "凡事先想怎么输的战略家",
+{"id": "laomou", "name": "弈", "mbti": "INTJ", "role": "debater", "tagline": "凡事先想怎么输的战略家",
  "avatar": "♟️", "color": "#5B6CFF", "can_search": false, "provider": "deepseek",
  "framework": {"id": "premortem", "name": "事前验尸", "method": "..."}}
 ```
@@ -152,7 +174,7 @@ es.addEventListener("done", () => es.close());
   "recommendations": [{"condition": "如果……", "suggestion": "……"}],
   "next_steps": ["这周能做的小事"],
   "values": ["成长"],
-  "stances": [{"persona_id": "laomou", "name": "老谋", "initial": "oppose", "final": "oppose", "note": "...",
+  "stances": [{"persona_id": "laomou", "name": "弈", "initial": "oppose", "final": "oppose", "note": "...",
         "changes": [{"round": 2, "from": "oppose", "to": "conditional", "persuaded_by": "c4", "justified": true}],
  "blocked_changes": 0}],
   "stats": {"claims": 22, "challenges": 18, "echoes": 0, "rewrites": 7, "rounds": 3, "experiences_used": 0}
