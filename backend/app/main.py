@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import time
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -9,37 +11,42 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import engine, evolution, metrics
 from .config import Settings
 from .content import CATEGORIES
-from .engine import Services
+from .engine import Busy, Services
 
 log = logging.getLogger("perspectives.api")
 
 
 class SessionIn(BaseModel):
-    dilemma: str = ""
-    leaning: str = ""
-    reasons: list[str] = Field(default_factory=list)
-    facts: list[str] = Field(default_factory=list)
-    mbti: str | None = None
-    user_id: str | None = None
+    dilemma: str = Field(default="", max_length=1500)
+    leaning: str = Field(default="", max_length=300)
+    reasons: list[str] = Field(default_factory=list, max_length=8)
+    facts: list[str] = Field(default_factory=list, max_length=8)
+    mbti: str | None = Field(default=None, max_length=4)
+    user_id: str | None = Field(default=None, max_length=64)
     mode: str = "deep"
-    preset_id: str | None = None
+    preset_id: str | None = Field(default=None, max_length=64)
     options: dict = Field(default_factory=dict)
+
+    @field_validator("reasons", "facts")
+    @classmethod
+    def _short(cls, v: list[str]) -> list[str]:
+        return [x[:300] for x in v]
 
 
 class QuickIn(BaseModel):
     preset_id: str
-    mbti: str | None = None
-    user_id: str | None = None
+    mbti: str | None = Field(default=None, max_length=4)
+    user_id: str | None = Field(default=None, max_length=64)
 
 
 class Answer(BaseModel):
     id: str
-    answer: str
+    answer: str = Field(max_length=400)
 
 
 class ClarifyIn(BaseModel):
@@ -48,7 +55,7 @@ class ClarifyIn(BaseModel):
 
 
 class InterjectIn(BaseModel):
-    text: str
+    text: str = Field(max_length=400)
     reason_id: str | None = None
     claim_id: str | None = None
 
@@ -59,7 +66,7 @@ class FeedbackItem(BaseModel):
 
 
 class FeedbackIn(BaseModel):
-    items: list[FeedbackItem]
+    items: list[FeedbackItem] = Field(max_length=60)
     user_id: str | None = None
 
 
@@ -87,11 +94,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         await svc.shutdown()
 
+    hits: dict[str, list[float]] = dict()
+
     app = FastAPI(title="Perspectives API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"],
         expose_headers=["*"],
     )
+
+    def client_ip(request: Request) -> str:
+        fwd = request.headers.get("x-forwarded-for", "")
+        return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")
+
+    @app.middleware("http")
+    async def limit(request: Request, call_next):
+        """按 IP 限制写请求的频率；读请求不限（前端要轮询）。"""
+        if settings.rate_per_minute and request.method in ("POST", "PUT", "DELETE"):
+            ip, now = client_ip(request), time.monotonic()
+            recent = [t for t in hits.get(ip, []) if now - t < 60]
+            if len(recent) >= settings.rate_per_minute:
+                hits[ip] = recent
+                return JSONResponse(status_code=429, content={"detail": "请求太频繁，请稍后再试"}, headers={"Retry-After": "30"})
+            recent.append(now)
+            hits[ip] = recent
+            if len(hits) > 5000:  # 防止字典无限增长
+                for k in [k for k, v in hits.items() if not v or now - v[-1] > 60]:
+                    hits.pop(k, None)
+        return await call_next(request)
+
+    @app.exception_handler(Busy)
+    async def busy(_: Request, exc: Busy):
+        return JSONResponse(status_code=429, content={"detail": "现在体验的人太多了，请稍等一会儿再试"}, headers={"Retry-After": "20"})
+
+    def user_key(user_id: str) -> str:
+        """X-User-Key 由服务端密钥和 user_id 算出，前端在创建会话时拿到后保存在本地。"""
+        secret = settings.admin_token or settings.db_path
+        return hashlib.sha256((secret + "|" + user_id).encode()).hexdigest()[:32]
+
+    def hmac_eq(a: str, b: str) -> bool:
+        import hmac
+        return hmac.compare_digest(a.encode(), b.encode())
 
     def svc_of(request: Request) -> Services:
         return request.app.state.svc
@@ -113,20 +155,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def view(svc: Services, s: dict) -> dict:
         sid = s["id"]
         return {
-            **s,
+            **{k: v for k, v in s.items() if k != "options"},
             "running": svc.running(sid),
             "last_seq": svc.store.last_seq(sid),
             "claims": svc.store.claims(sid),
             "utterances": svc.store.utterances(sid),
             "stances": svc.store.stances(sid),
             "feedback": svc.store.feedback(sid),
+            "user_key": user_key(s["user_id"]) if s.get("user_id") else None,
         }
 
     # ---------- 基础信息 ----------
     @app.get("/api/health")
     def health(svc: Services = Depends(svc_of)):
-        return {"ok": True, "llm": svc.llm.info(), "search": svc.search.enabled,
-                "content_version": svc.content.version}
+        return {"ok": True, "mock": svc.llm.mock, "content_version": svc.content.version}
 
     @app.get("/api/personas")
     def personas(svc: Services = Depends(svc_of)):
@@ -159,9 +201,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return view(svc, session_or_404(svc, sid))
 
     @app.post("/api/sessions/{sid}/clarify")
-    def clarify(sid: str, body: ClarifyIn, svc: Services = Depends(svc_of)):
+    async def clarify(sid: str, body: ClarifyIn, svc: Services = Depends(svc_of)):
         session_or_404(svc, sid)
-        s = engine.answer_clarify(svc, sid, [a.model_dump() for a in body.answers], body.reasons)
+        s = await engine.answer_clarify(svc, sid, [a.model_dump() for a in body.answers], body.reasons)
         return view(svc, s)
 
     @app.post("/api/sessions/{sid}/start")
@@ -219,7 +261,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/sessions/{sid}/interject")
     async def interject(sid: str, body: InterjectIn, svc: Services = Depends(svc_of)):
         session_or_404(svc, sid)
-        return engine.interject(svc, sid, body.text, body.reason_id, body.claim_id)
+        return await engine.interject(svc, sid, body.text, body.reason_id, body.claim_id)
 
     @app.post("/api/sessions/{sid}/feedback")
     async def feedback(sid: str, body: FeedbackIn, svc: Services = Depends(svc_of)):
@@ -238,8 +280,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---------- 进化 ----------
     @app.get("/api/users/{user_id}/profile")
-    def profile(user_id: str, svc: Services = Depends(svc_of)):
+    def profile(user_id: str, x_user_key: str | None = Header(default=None), svc: Services = Depends(svc_of)):
+        """个人档案。user_id 是前端生成的随机串，档案里有用户过去的决定，所以必须带请求头 X-User-Key。"""
         row = svc.store.get_profile(user_id)
+        if row and (not x_user_key or not hmac_eq(x_user_key, user_key(user_id))):
+            raise HTTPException(403, "需要 X-User-Key")
         return {"user_id": user_id, "mbti": (row or dict()).get("mbti"),
                 "profile": evolution.load_profile(svc.store, user_id)}
 

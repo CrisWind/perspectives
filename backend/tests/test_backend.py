@@ -189,7 +189,10 @@ def test_feedback_evolves_experience_library(client):
     assert applied and applied[0]["data"]["items"][0]["id"] == exps[0]["id"]
     assert s2["card"]["stats"]["experiences_used"] >= 1
     # 个人层
-    prof = client.get("/api/users/u1/profile").json()
+    assert client.get("/api/users/u1/profile").status_code == 403  # 没有密钥看不到别人的档案
+    assert client.get("/api/users/u1/profile", headers={"X-User-Key": "wrong"}).status_code == 403
+    key = client.get(f"/api/sessions/{sid}").json()["user_key"]
+    prof = client.get("/api/users/u1/profile", headers={"X-User-Key": key}).json()
     assert prof["mbti"] == "ENFP" and len(prof["profile"]["decisions"]) == 2 and prof["profile"]["values"]
     st = client.get("/api/stats").json()
     assert st["stats"]["experiences"] == 1 and st["stats"]["feedback"] == 2
@@ -240,7 +243,7 @@ def test_prompt_version_gate_and_rollback(tmp_path):
 
 def test_health_and_content(client):
     h = client.get("/api/health").json()
-    assert h["ok"] and h["llm"]["mock"] is True
+    assert h["ok"] and h["mock"] is True and "llm" not in h
     assert len(client.get("/api/personas").json()["personas"]) == 16
     assert len(client.get("/api/presets").json()["presets"]) == 6
 
@@ -293,3 +296,88 @@ def test_same_batch_collisions_become_echoes(tmp_path, monkeypatch):
     second = [u for u in utts if u["round"] == 1][1]
     assert len(first_round) == 2 + 1 + 2 + 2
     assert first_round[0]["echoed_by"] == [second["persona_id"]] and len(second["claim_ids"]) == 1
+
+
+# ---------- 安全 ----------
+def test_crisis_input_stops_debate_and_shows_help(client):
+    r = client.post("/api/sessions", json={"dilemma": "我最近觉得活着没意思，想一了百了，要不要退学", "leaning": "退学"})
+    s = r.json()
+    assert r.status_code == 200 and s["status"] == "safety" and s["reasons"] == []
+    assert "未保存" in s["dilemma"] and "活着" not in str(s)  # 不保存原文
+    ev = client.get(f"/api/sessions/{s['id']}/events?format=json").json()["events"]
+    safety = next(e for e in ev if e["type"] == "safety")
+    assert safety["data"]["lines"][0]["number"] == "12356" and ev[-1]["type"] == "done"
+    assert client.post(f"/api/sessions/{s['id']}/start").status_code == 400  # 不能开辩论
+
+
+def test_crisis_in_clarify_answer_and_interjection(client):
+    s = client.post("/api/sessions", json={"dilemma": "要不要辞职去创业。因为现在的工作太无聊了；而且朋友拉我入伙"}).json()
+    assert s["status"] == "clarifying"
+    q = s["questions"][0]
+    s2 = client.post(f"/api/sessions/{s['id']}/clarify", json={"answers": [{"id": q["id"], "answer": "我不想活了"}]}).json()
+    assert s2["status"] == "safety"
+    done = run_deep(client)
+    r = client.post(f"/api/sessions/{done['id']}/interject", json={"text": "其实我有过轻生的念头"}).json()
+    assert r["safety"]["kind"] == "self_harm"
+
+
+def test_figurative_words_do_not_trigger_crisis(tmp_path):
+    """关键词命中后由模型判断；判断为夸张说法就放行，正常开辩论。"""
+    with TestClient(create_app(make_settings(tmp_path))) as c:
+        llm = c.app.state.svc.llm
+        orig = llm.json
+
+        async def fake(purpose, *a, **k):
+            if purpose == "safety":
+                return dict(crisis=False), "mock"
+            return await orig(purpose, *a, **k)
+
+        llm.json = fake
+        s = c.post("/api/sessions", json={"dilemma": "期末考试要累死了，考不好我就去死哈哈，要不要放弃竞赛专心复习"}).json()
+        assert s["status"] != "safety" and s["reasons"]
+        assert c.post(f"/api/sessions/{s['id']}/start").status_code == 200
+
+
+def test_safety_judge_failure_falls_back_to_keywords(tmp_path):
+    from app import safety
+    from app.llm import LLMError
+
+    async def boom(*a, **k):
+        raise LLMError("down")
+
+    with TestClient(create_app(make_settings(tmp_path))) as c:
+        c.app.state.svc.llm.json = boom
+        s = c.post("/api/sessions", json={"dilemma": "我真的不想活了，要不要休学"}).json()
+        assert s["status"] == "safety"  # 模型不可用时，命中关键词仍然按危机处理
+        s = c.post("/api/sessions", json={"dilemma": "要不要从大厂辞职去创业公司", "reasons": ["成长更快"]}).json()
+        assert s["status"] != "safety"
+    assert safety.has_signal("想轻生") and not safety.has_signal("要不要换工作")
+
+
+def test_input_limits_and_session_id_is_not_guessable(client):
+    r = client.post("/api/sessions", json={"dilemma": "要不要辞职" * 400})
+    assert r.status_code == 422
+    r = client.post("/api/sessions", json={"dilemma": "要不要辞职去创业，我已经想好了", "reasons": ["理由"] * 20})
+    assert r.status_code == 422
+    s = client.post("/api/sessions", json={"dilemma": "要不要辞职去创业，我已经想好了", "reasons": ["太无聊了"]}).json()
+    assert len(s["id"]) >= 22
+
+
+def test_rate_limit_returns_429(tmp_path):
+    st = make_settings(tmp_path)
+    st.rate_per_minute = 3
+    with TestClient(create_app(st)) as c:
+        codes = [c.post("/api/sessions", json={"dilemma": "要不要辞职去创业，我已经想好了"}).status_code for _ in range(5)]
+        assert codes[:3] == [200, 200, 200] and codes[3:] == [429, 429]
+        assert c.get("/api/health").status_code == 200  # 读请求不受限
+
+
+def test_too_many_active_debates_returns_429(tmp_path):
+    st = make_settings(tmp_path)
+    st.max_active_sessions = 1
+    st.mock_delay = 0.4
+    with TestClient(create_app(st)) as c:
+        ids = [c.post("/api/sessions", json={"dilemma": "要不要辞职去创业，我已经想好了", "reasons": ["太无聊了"], "options": {"skip_questions": True}}).json()["id"] for _ in range(2)]
+        assert c.post(f"/api/sessions/{ids[0]}/start").status_code == 200
+        r = c.post(f"/api/sessions/{ids[1]}/start")
+        assert r.status_code == 429 and "稍等" in r.json()["detail"]

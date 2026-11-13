@@ -10,8 +10,8 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
-def new_id(prefix: str = "") -> str:
-    return prefix + uuid.uuid4().hex[:12]
+def new_id(prefix: str = "", n: int = 12) -> str:
+    return prefix + uuid.uuid4().hex[:n]
 
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)

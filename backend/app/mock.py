@@ -208,6 +208,8 @@ def mock_response(purpose: str, c: dict) -> dict:
         return _extract(c)
     if purpose == "cluster":
         return _cluster(c)
+    if purpose == "safety":
+        return dict(crisis=bool(c.get("signal")), kind="self_harm")
     if purpose == "lean":
         return dict(lean="conditional")
     if purpose == "persona_score":

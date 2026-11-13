@@ -52,7 +52,7 @@ POST /api/sessions/{id}/feedback  反馈
 | 字段 | 说明 |
 |---|---|
 | `id` | 会话编号 |
-| `status` | `clarifying` 等待回答追问；`ready` 可以开始；`running` 进行中；`completed` 已出决策卡；`failed` 失败 |
+| `status` | `clarifying` 等待回答追问；`ready` 可以开始；`running` 进行中；`completed` 已出决策卡；`failed` 失败；`safety` 用户输入涉及安全风险，已停止，见第九节 |
 | `mode` | `quick` 或 `deep` |
 | `category` | `study` 升学、`job` 求职、`switch` 跳槽、`city` 换城市、`other` |
 | `dilemma` `leaning` `facts` | 难题、倾向、已知事实 |
@@ -121,6 +121,7 @@ es.addEventListener("done", () => es.close());
 | `user.interjected` | `{claim}` | 用户的插话进入论点池 |
 | `round.completed` | `{round}` | |
 | `card.ready` / `card.updated` | `{card}` | 决策卡 / 回应异议后更新的决策卡 |
+| `safety` | `{message, lines, tips, kind}` | 用户输入涉及自伤、伤害他人或正在遭受侵害。后端不会开辩论，前端必须展示求助信息，见第九节 |
 | `error` | `{message}` | 出错 |
 | `done` | `{status, cached?}` | 这一段结束。`cached: true` 表示是回放的缓存 |
 
@@ -195,7 +196,7 @@ POST /api/sessions/{id}/feedback
 | `GET /api/presets` | 预设难题卡和类别名称 |
 | `GET /api/sessions/{id}/metrics` | 这一场的质量指标 |
 | `POST /api/sessions/{id}/card` | 决策卡生成失败时重新生成 |
-| `GET /api/users/{user_id}/profile` | 个人层记忆 |
+| `GET /api/users/{user_id}/profile` | 个人层记忆，必须带请求头 `X-User-Key`（创建会话的响应里有 `user_key`，前端保存在本地） |
 | `GET /api/experiences?category=` | 经验库，按有用率排序 |
 | `GET /api/evolution/log` | 进化日志，`layer` 为 `personal` / `group` / `system` |
 | `GET /api/evolution/versions` | 角色补充准则的各个版本及状态 |
@@ -214,3 +215,25 @@ POST /api/sessions/{id}/feedback
 - `400`：请求有问题，`{"detail": "原因"}`。
 - `404`：会话或角色不存在。
 - 辩论过程中出错：事件流里会有 `error`，随后 `status` 变为 `failed` 并发 `done`。如果论点已经产生、只是决策卡失败，可以调 `POST /api/sessions/{id}/card` 重试。
+
+## 九、安全提示（必须实现）
+
+每次用户输入（难题、理由、追问的回答、插话）都会经过安全检查。命中自伤、自杀、伤害他人，或自己正在遭受暴力、侵害时：
+
+- 后端不开辩论，也不保存用户写的原文。
+- 会话状态变为 `safety`，事件流里发一条 `safety` 事件，然后 `done`。插话命中时，`POST /interject` 直接返回 `{"queued": false, "safety": {...}}`。
+- 前端收到后要**停止展示辩论界面**，改为展示求助信息：
+
+```json
+{"message": "你说的这些我很在意……", "kind": "self_harm",
+ "lines": [{"name": "全国统一心理援助热线", "number": "12356", "note": "免费，覆盖焦虑、抑郁、危机干预"}, ...],
+ "tips": ["如果你在学校，可以现在就联系辅导员……"]}
+```
+
+`kind` 取值 `self_harm`、`harm_others`、`abuse`、`other`。号码是公开信息，上线前请再核对一遍。检查会有少量误判，所以文案不要写成“你有危险”，用 `message` 里的原话即可。
+
+## 十、限流和并发
+
+- 写请求（POST）按 IP 限频，超过返回 `429`。同时在跑的辩论数达到上限时，`POST /start` 也返回 `429`，`detail` 是可以直接展示的中文提示。收到 429 时请提示用户稍等再试，不要自动重试。
+- 读请求（GET）不限频，可以轮询。
+- 会话编号是 20 位随机串，相当于这场辩论的访问凭证，不要放进公开链接或日志。

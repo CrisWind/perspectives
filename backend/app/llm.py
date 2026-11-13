@@ -50,6 +50,17 @@ class Provider:
     extra: dict = field(default_factory=dict)
 
 
+def _extra(name: str) -> dict:
+    extra = dict(DEFAULT_EXTRA.get(name) or dict())
+    raw = os.environ.get(f"{name.upper()}_EXTRA_BODY", "").strip()
+    if raw:
+        try:
+            extra = dict(jsonlib.loads(raw))
+        except (ValueError, TypeError):
+            log.warning("%s_EXTRA_BODY is not a JSON object, ignored", name.upper())
+    return extra
+
+
 def load_providers() -> list[Provider]:
     names = list(KNOWN)
     for extra in os.environ.get("LLM_EXTRA_PROVIDERS", "").split(","):
@@ -61,20 +72,21 @@ def load_providers() -> list[Provider]:
         key = os.environ.get(f"{name.upper()}_API_KEY", "").strip()
         if not key:
             continue
-        base, model = KNOWN.get(name, ("", ""))
+        base, model = KNOWN.get(name, ('', ''))
         base = os.environ.get(f"{name.upper()}_BASE_URL", "").strip() or base
         model = os.environ.get(f"{name.upper()}_MODEL", "").strip() or model
+        # 一个网关背后有多个模型：NAME_MODELS=别名:模型名,别名:模型名，每个别名成为独立的提供方，共用同一个密钥和地址
+        multi = os.environ.get(f"{name.upper()}_MODELS", "").strip()
+        if multi and base:
+            for pair in multi.split(","):
+                alias, _, real = pair.strip().partition(":")
+                if alias and real:
+                    out.append(Provider(alias.strip().lower(), base.rstrip('/'), key, real.strip(), extra=_extra(alias.strip().lower())))
+            continue
         if not base or not model:
             log.warning("provider %s skipped: needs %s_BASE_URL and %s_MODEL", name, name.upper(), name.upper())
             continue
-        extra = dict(DEFAULT_EXTRA.get(name) or dict())
-        raw = os.environ.get(f"{name.upper()}_EXTRA_BODY", "").strip()
-        if raw:
-            try:
-                extra = dict(jsonlib.loads(raw))
-            except (ValueError, TypeError):
-                log.warning("%s_EXTRA_BODY is not a JSON object, ignored", name.upper())
-        out.append(Provider(name, base.rstrip("/"), key, model, extra=extra))
+        out.append(Provider(name, base.rstrip('/'), key, model, extra=_extra(name)))
     return out
 
 
@@ -85,7 +97,7 @@ class LLM:
         found = load_providers() if providers is None else providers
         self.providers: dict[str, Provider] = {p.name: p for p in found}
         self.mock = settings.force_mock or not self.providers
-        self._sem = asyncio.Semaphore(settings.llm_concurrency)
+        self._sems: dict[str, asyncio.Semaphore] = dict()  # 每个提供方单独限流，一家慢不拖累别家
         self._client: httpx.AsyncClient | None = None
 
     # ---------- 路由 ----------
@@ -209,7 +221,8 @@ class LLM:
             t0 = time.monotonic()
             retryable = True
             try:
-                async with self._sem:
+                sem = self._sems.setdefault(p.name, asyncio.Semaphore(self.settings.llm_concurrency))
+                async with sem:
                     r = await self._client.post(f"{p.base_url}/chat/completions", json=body, headers=headers)
                 ms = int((time.monotonic() - t0) * 1000)
                 if r.status_code == 200:

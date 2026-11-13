@@ -54,7 +54,9 @@ class Settings:
     judge_provider: str = ""
     llm_timeout: float = 90.0
     llm_max_retries: int = 2
-    llm_concurrency: int = 6
+    llm_concurrency: int = 8  # 每个模型提供方各自的并发上限
+    max_active_sessions: int = 40  # 同时在跑的辩论数上限，超过返回 429
+    rate_per_minute: int = 120  # 每个 IP 每分钟最多的写请求数，0 表示不限制
 
     # 查证
     search_provider: str = ""
@@ -82,6 +84,8 @@ class Settings:
         s.judge_provider = os.environ.get("JUDGE_PROVIDER", "")
         s.llm_timeout = _float("LLM_TIMEOUT", s.llm_timeout)
         s.llm_concurrency = _int("LLM_CONCURRENCY", s.llm_concurrency)
+        s.max_active_sessions = _int("MAX_ACTIVE_SESSIONS", s.max_active_sessions)
+        s.rate_per_minute = _int("RATE_PER_MINUTE", s.rate_per_minute)
         s.search_provider = os.environ.get("SEARCH_PROVIDER", "").lower()
         s.search_api_key = os.environ.get("SEARCH_API_KEY", "")
         s.quick_replay_delay = _float("QUICK_REPLAY_DELAY", s.quick_replay_delay)

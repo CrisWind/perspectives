@@ -6,7 +6,7 @@ import hashlib
 import logging
 import re
 
-from . import evolution, prompts, quality
+from . import evolution, prompts, quality, safety
 from .config import Settings
 from .content import Content, norm_mbti, select_team
 from .llm import LLM, LLMError
@@ -19,6 +19,10 @@ log = logging.getLogger("perspectives.engine")
 _ID_REF = re.compile(r" ?(?<![A-Za-z0-9])([rcRC])(\d{1,3})(?![A-Za-z0-9])\s?")
 VERDICTS = ("solid", "shaky", "weak")
 SLOW_EVENTS = ("utterance.completed", "quality.rejected", "card.ready")
+
+
+class Busy(Exception):
+    """同时在跑的辩论太多，请稍后再试（接口返回 429）。"""
 
 
 class Services:
@@ -50,6 +54,9 @@ class Services:
         except asyncio.TimeoutError:
             pass
 
+    def active(self) -> int:
+        return sum(1 for t in self.tasks.values() if not t.done())
+
     def running(self, sid: str) -> bool:
         t = self.tasks.get(sid)
         return bool(t) and not t.done()
@@ -80,17 +87,39 @@ def _reason_list(texts: list[str]) -> list[dict]:
     return [{"id": f"r{i + 1}", "text": t} for i, t in enumerate(clean[:6])]
 
 
+def _stop_for_safety(svc: Services, base: dict, crisis: dict, session: dict | None = None) -> dict:
+    """危机信号：不开辩论，通知前端展示求助信息。不保存用户写的原文（它可能包含很私密的内容）。"""
+    sid = base["id"]
+    if session is None:
+        session = svc.store.create_session(dict(
+            base, dilemma="（内容涉及安全提示，未保存）", leaning="", category="other", reasons=[], facts=[], questions=[],
+            status="safety", options=dict(safety_kind=crisis["kind"]),
+        ))
+    else:
+        svc.store.update_session(sid, status="safety", options=dict(session.get("options") or dict(), safety_kind=crisis["kind"]))
+        session = svc.store.get_session(sid)
+    svc.emit(sid, "safety", crisis)
+    svc.emit(sid, "status", {"status": "safety"})
+    svc.emit(sid, "done", {"status": "safety"})
+    return session
+
+
 async def create_session(svc: Services, req: dict) -> dict:
     """req: dilemma, leaning, reasons, facts, mbti, user_id, mode, preset_id, options。"""
     st = svc.settings
     mode = req.get("mode") if req.get("mode") in ("quick", "deep", "eval") else "deep"
     opts = dict(req.get("options") or dict())
     opts.setdefault("quality_engine", True)
-    sid = new_id("s_")
+    sid = new_id("s_", 20)
     user_id = req.get("user_id") or None
     mbti = norm_mbti(req.get("mbti"))
     if user_id and not mbti:
         mbti = (svc.store.get_profile(user_id) or dict()).get("mbti")
+    if not req.get("preset_id"):
+        texts = [req.get("dilemma"), req.get("leaning"), *(req.get("reasons") or []), *(req.get("facts") or [])]
+        crisis = await safety.check(svc.llm, [t for t in texts if isinstance(t, str)], sid)
+        if crisis:
+            return _stop_for_safety(svc, dict(id=sid, user_id=user_id, mode=mode, mbti=mbti), crisis)
     preset = svc.content.presets.get(req.get("preset_id") or "")
     if req.get("preset_id") and not preset:
         raise ValueError("unknown preset_id")
@@ -139,10 +168,14 @@ async def create_session(svc: Services, req: dict) -> dict:
     return session
 
 
-def answer_clarify(svc: Services, sid: str, answers: list[dict], reasons: list[str] | None = None) -> dict:
+async def answer_clarify(svc: Services, sid: str, answers: list[dict], reasons: list[str] | None = None) -> dict:
     s = svc.store.get_session(sid)
     if s["status"] not in ("clarifying", "ready"):
         raise ValueError("session already started")
+    texts = [a.get("answer") for a in answers or [] if isinstance(a, dict)] + list(reasons or [])
+    crisis = await safety.check(svc.llm, [t for t in texts if isinstance(t, str)], sid)
+    if crisis:
+        return _stop_for_safety(svc, dict(id=sid), crisis, s)
     by_id = {a.get("id"): a.get("answer") for a in answers or [] if isinstance(a, dict)}
     for q in s["questions"]:
         if isinstance(by_id.get(q["id"]), str) and by_id[q["id"]].strip():
@@ -161,6 +194,8 @@ def start(svc: Services, sid: str) -> None:
     s = svc.store.get_session(sid)
     if svc.running(sid) or s["status"] not in ("ready", "clarifying"):
         raise ValueError("session cannot be started in status " + s["status"])
+    if svc.active() >= svc.settings.max_active_sessions:
+        raise Busy()
     svc.store.update_session(sid, status="running")
     svc.spawn(sid, Debate(svc, svc.store.get_session(sid)).run())
 
@@ -180,12 +215,16 @@ async def run_headless(svc: Services, preset_id: str, options: dict, mode: str =
     return s["id"]
 
 
-def interject(svc: Services, sid: str, text: str, reason_id: str | None = None, claim_id: str | None = None) -> dict:
+async def interject(svc: Services, sid: str, text: str, reason_id: str | None = None, claim_id: str | None = None) -> dict:
     """用户插话。辩论进行中：排队，下一轮角色必须回应。辩论结束后：开一轮回应并更新决策卡。"""
     s = svc.store.get_session(sid)
     text = clip(text or "", 400)
     if len(text) < 2:
         raise ValueError("text is required")
+    crisis = await safety.check(svc.llm, [text], sid)
+    if crisis:
+        svc.emit(sid, "safety", crisis)
+        return {"queued": False, "safety": crisis}
     item = {"text": text, "reason_id": reason_id, "claim_id": claim_id}
     if s["status"] == "running" and svc.running(sid) and not s.get("card"):
         svc.pending.setdefault(sid, []).append(item)
@@ -273,7 +312,7 @@ class Debate:
             raise
         except Exception as e:  # noqa: BLE001 任何错误都要让前端知道，而不是卡在"进行中"
             log.exception("debate %s failed", self.sid)
-            self.svc.emit(self.sid, "error", {"message": clip(str(e), 300)})
+            self.svc.emit(self.sid, "error", {"message": "生成过程出错，请稍后重试"})
             self.svc.emit(self.sid, "status", {"status": "failed"})
             self.svc.emit(self.sid, "done", {"status": "failed"})
 
@@ -333,7 +372,7 @@ class Debate:
             raise
         except Exception as e:  # noqa: BLE001
             log.exception("followup %s failed", self.sid)
-            self.svc.emit(self.sid, "error", {"message": clip(str(e), 300)})
+            self.svc.emit(self.sid, "error", {"message": "生成过程出错，请稍后重试"})
             self.svc.emit(self.sid, "status", {"status": "completed"})  # 原来的决策卡仍然有效
             self.svc.emit(self.sid, "done", {"status": "completed"})
 
