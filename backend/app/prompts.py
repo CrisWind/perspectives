@@ -22,7 +22,7 @@ def _case(s: dict) -> str:
     return "\n".join(lines)
 
 
-def _pool(pool: list[dict], names: dict[str, str], limit: int = 40) -> str:
+def _pool(pool: list[dict], names: dict[str, str], limit: int = 40, by_reason: bool = False) -> str:
     rows = []
     for c in pool[-limit:]:
         who = "用户" if c["persona_id"] == "user" else names.get(c["persona_id"], c["persona_id"])
@@ -30,6 +30,16 @@ def _pool(pool: list[dict], names: dict[str, str], limit: int = 40) -> str:
         about = f"，关于 {c['reason_id']}" if c.get("reason_id") else ""
         rows.append(f"- {c['id']}（{who}{about}{extra}）：{c['text']}")
     return "\n".join(rows) or "（空）"
+
+
+def _covered(pool: list[dict]) -> str:
+    """按理由列出“已经说过的结论”的开头，让角色一眼看到哪些话题已经被说透了。"""
+    seen: dict[str, list[str]] = dict()
+    for c in pool:
+        if c["persona_id"] == "user":
+            continue
+        seen.setdefault(c.get("reason_id") or "其他", []).append(c["text"][:26])
+    return chr(10).join(f"- {k}：" + "；".join(v[-8:]) for k, v in seen.items())
 
 
 def clarify(dilemma: str, leaning: str, reasons: list[str], facts: list[str], max_questions: int) -> tuple[str, str]:
@@ -112,7 +122,11 @@ def persona_user(
     if kind == "independent":
         parts.append("【本轮】第 1 轮，独立作答。你看不到其他角色的发言。用你的思维框架检验用户的理由，挑你认为最关键的一两条说。")
     else:
-        parts.append("【论点池】（已经有人说过的论点，不要重复）\n" + _pool(pool, names))
+        parts.append("【论点池】（已经有人说过的论点）" + chr(10) + _pool(pool, names))
+        cov = _covered(pool)
+        if cov:
+            parts.append("【已经说过的话题】一个结论整场辩论只需要说一次。下面这些话题别人已经说透了，你再换个角度重复，对用户没有新价值，会被打回：" + chr(10) + cov
+                + chr(10) + "你这一轮要么提出上面没有的新话题，要么直接反驳上面某条结论的漏洞，要么指出两条结论之间的矛盾。")
         if prev_stance:
             parts.append(f"【你上一轮的立场】{prev_stance['position']}（{POSITION_CN[prev_stance['position']]}）：{prev_stance.get('note', '')}")
         task = f"【本轮】第 {rnd} 轮，交叉质询。"
@@ -137,7 +151,7 @@ def persona_user(
 def judge(p: dict, fw: dict, speech: str, claims: list[dict], pool: list[dict], position: str) -> tuple[str, str]:
     system = """你是辩论质量检查员，做三件事，标准要严格但不要吹毛求疵。
 1. 去重：判断每条"新论点"是不是和"论点池"里某条论点表达同一个意思。重复就给出池中那条的编号，否则给 null。
-                        算重复：核心主张相同，只是换了说法或例子；或者只是表示赞同、把已有论点复述一遍。
+                        算重复：核心主张相同，只是换了说法或例子；只是表示赞同、把已有论点复述一遍；对同一条理由得出和已有论点同样的判断，只是换了推理角度或换了框架的术语（比如别人已经说“兴趣需要证据”，你再说“兴趣是最廉价的理由”也是同一个结论）。
                         不算重复：反驳或限定某条已有论点（指出它的漏洞、前提、例外）；给已有论点补上它没有的具体事实、数字或可执行的验证办法；提出池里没有的新因素（比如别人谈现金流，这条谈社保和工龄）；针对同一条理由但主张不同。
                         先在 adds 里写出新论点比最接近的那条多了什么实质内容，再下结论：adds 写得出实质内容就不是重复；拿不准时判不重复。
 2. 人设：判断发言是否符合给定角色的说话风格和思维框架。只有明显不符（比如冷静的角色在煽情、该用第一人称的没用、完全没用到思维框架）才判不符。

@@ -17,6 +17,7 @@ from . import engine, evolution, metrics
 from .config import Settings
 from .content import CATEGORIES
 from .engine import Busy, Services
+from .quality import similarity
 
 log = logging.getLogger("perspectives.api")
 
@@ -68,6 +69,12 @@ class FeedbackItem(BaseModel):
 class FeedbackIn(BaseModel):
     items: list[FeedbackItem] = Field(max_length=60)
     user_id: str | None = None
+
+
+class SeedIn(BaseModel):
+    category: str = Field(max_length=16)
+    pattern: str = Field(min_length=6, max_length=120)
+    framework_id: str | None = Field(default=None, max_length=32)
 
 
 class EvaluateIn(BaseModel):
@@ -291,6 +298,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/experiences")
     def experiences(category: str | None = None, limit: int = Query(50, le=200), svc: Services = Depends(svc_of)):
         return {"experiences": svc.store.experiences(category, limit)}
+
+    @app.post("/api/experiences/seed", dependencies=[Depends(admin)])
+    def add_seed(body: SeedIn, svc: Services = Depends(svc_of)):
+        """录入团队整理的种子经验（访谈得来的、官方资料里总结的）。来源标记为 seed，可直接被角色使用。"""
+        if body.category not in ("study", "job", "switch", "city", "other"):
+            raise ValueError("category 必须是 study/job/switch/city/other 之一")
+        if body.framework_id and body.framework_id not in svc.content.frameworks:
+            raise ValueError("unknown framework_id")
+        if any(similarity(e["pattern"], body.pattern) >= 0.6 for e in svc.store.experiences(body.category)):
+            raise ValueError("库里已经有很相近的经验")
+        exp_id = svc.store.add_experience(category=body.category, framework_id=body.framework_id, pattern=body.pattern, source="seed", wins=2)
+        svc.store.log_evolution("group", "seeded", f"录入种子经验：{body.pattern}", {"experience_id": exp_id})
+        return {"id": exp_id}
 
     @app.get("/api/evolution/log")
     def evolution_log(limit: int = Query(50, le=200), svc: Services = Depends(svc_of)):

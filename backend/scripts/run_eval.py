@@ -1,17 +1,17 @@
 """评测：我们的系统和三个对照组在同一批难题上的对比。
 
-  A  单个 AI 直接回答
-  B  一段提示词让一个模型扮演多个角色
-  C  多智能体，但关掉质量引擎
-  ours  完整系统
+                A  单个 AI 直接回答
+                B  一段提示词让一个模型扮演多个角色
+                C  多智能体，但关掉质量引擎
+                ours  完整系统
 
 所有方案的输出用同一套办法度量：同一个抽取器抽论点，同一个聚类器数不重复论点，
 同一个裁判判人设。这样我们的系统不会因为"自己报的论点数"占便宜。
 
 用法（在 backend 目录下）：
-  uv run python scripts/run_eval.py      # 用预设难题
-  uv run python scripts/run_eval.py --questions q.yaml # 用自己的题库（格式同 app/content/presets.yaml）
-  uv run python scripts/run_eval.py --limit 3 --arms A,ours
+                uv run python scripts/run_eval.py      # 用预设难题
+                uv run python scripts/run_eval.py --questions q.yaml # 用自己的题库（格式同 app/content/presets.yaml）
+                uv run python scripts/run_eval.py --limit 3 --arms A,ours
 结果写到 eval_out/：results.json、summary.md、blind/（盲评材料和答案）。
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ async def measure(svc: Services, speeches: list[dict], team: dict[str, dict]) ->
     llm = svc.llm
     claims: list[dict] = []
 
-    async def extract(sp: dict) -> list[dict]:
+    async def extract(si: int, sp: dict) -> list[dict]:
         system, user = prompts.extract(sp["text"])
         try:
             out, _ = await llm.json("extract", system, user, provider=llm.judge, temperature=0.0, max_tokens=900,
@@ -68,19 +68,19 @@ async def measure(svc: Services, speeches: list[dict], team: dict[str, dict]) ->
         rows = []
         for c in out.get("claims") or []:
             if isinstance(c, dict) and isinstance(c.get("text"), str) and len(c["text"].strip()) >= 6:
-                rows.append({"text": c["text"].strip(), "challenge": bool(c.get("challenge"))})
+                rows.append({"text": c["text"].strip(), "challenge": bool(c.get("challenge")), "speech": si})
             elif isinstance(c, str) and len(c.strip()) >= 6:
-                rows.append({"text": c.strip(), "challenge": False})
+                rows.append({"text": c.strip(), "challenge": False, "speech": si})
         return rows
 
-    for rows in await asyncio.gather(*(extract(sp) for sp in speeches)):
+    for rows in await asyncio.gather(*(extract(si, sp) for si, sp in enumerate(speeches))):
         claims.extend(rows)
     texts = [c["text"] for c in claims]
     groups = quality.cluster(texts)
     if texts and not llm.mock:
         system, user = prompts.cluster(texts)
         try:
-            out, _ = await llm.json("cluster", system, user, provider=llm.judge, temperature=0.0, max_tokens=1200)
+            out, _ = await llm.json("cluster", system, user, provider=llm.judge, temperature=0.0, max_tokens=min(4000, 300 + 12 * len(texts)))
             seen, got = set(), []
             for g in out.get("groups") or []:
                 g = [i for i in g if isinstance(i, int) and 0 <= i < len(texts) and i not in seen]
@@ -92,6 +92,8 @@ async def measure(svc: Services, speeches: list[dict], team: dict[str, dict]) ->
         except LLMError:
             pass
     challenge_groups = sum(1 for g in groups if any(claims[i]["challenge"] for i in g))
+    # 重复 = 一个结论被另一次发言又说了一遍。同一次发言里把一个意思拆成几条，不算重复。
+    cross = sum(1 for g in groups for i in g[1:] if claims[i]["speech"] != claims[g[0]]["speech"])
 
     async def consistent(sp: dict) -> bool | None:
         p = team.get(sp.get("persona") or "")
@@ -109,7 +111,8 @@ async def measure(svc: Services, speeches: list[dict], team: dict[str, dict]) ->
     return {
         "claims": total,
         "unique_claims": len(groups),
-        "repetition_rate": round(1 - len(groups) / total, 3) if total else 0.0,
+        "cross_repeats": cross,
+        "repetition_rate": round(cross / total, 3) if total else 0.0,
         "challenge_claims": challenge_groups,
         "persona_consistency": round(sum(marks) / len(marks), 3) if marks else None,
     }

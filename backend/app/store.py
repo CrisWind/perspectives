@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS feedback(
                 PRIMARY KEY(session_id, claim_id));
 CREATE TABLE IF NOT EXISTS experiences(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, framework_id TEXT, persona_id TEXT,
-                pattern TEXT, source_session TEXT, source_claim TEXT,
+                pattern TEXT, source_session TEXT, source_claim TEXT, source TEXT DEFAULT 'user',
                 wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0, uses INTEGER DEFAULT 0,
                 created_at TEXT, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS user_profiles(
@@ -88,6 +88,9 @@ class Store:
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._lock = threading.RLock()
         self._conn.executescript(SCHEMA)
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(experiences)").fetchall()}
+        if "source" not in cols:  # 旧库升级
+            self._conn.execute("ALTER TABLE experiences ADD COLUMN source TEXT DEFAULT 'user'")
 
     def close(self) -> None:
         with self._lock:
@@ -281,17 +284,18 @@ class Store:
             rows = self._all("SELECT * FROM experiences")
         for r in rows:
             r["score"] = round((r["wins"] + 1) / (r["wins"] + r["losses"] + 2), 3)
+            r["votes"] = r["wins"] + r["losses"]
         rows.sort(key=lambda r: (-r["score"], -r["wins"], r["id"]))
         return rows[:limit]
 
     def add_experience(self, **e: Any) -> int:
         ts = now_iso()
         cur = self._exec(
-            "INSERT INTO experiences(category,framework_id,persona_id,pattern,source_session,"
-            "source_claim,wins,losses,uses,created_at,updated_at) VALUES(?,?,?,?,?,?,?,0,0,?,?)",
+            "INSERT INTO experiences(category,framework_id,persona_id,pattern,source_session,source_claim,source,"
+            "wins,losses,uses,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0,?,?)",
             (
                 e["category"], e.get("framework_id"), e.get("persona_id"), e["pattern"],
-                e.get("source_session"), e.get("source_claim"), e.get("wins", 1), ts, ts,
+                e.get("source_session"), e.get("source_claim"), e.get("source", "user"), e.get("wins", 1), ts, ts,
             ),
         )
         return cur.lastrowid

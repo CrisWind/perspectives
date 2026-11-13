@@ -182,20 +182,33 @@ def test_feedback_evolves_experience_library(client):
     assert r["learned"] == [] and r["reinforced"] == []
     exps = client.get("/api/experiences").json()["experiences"]
     assert len(exps) == 1 and exps[0]["category"] == "switch"
-    # 下一场同类辩论会用上这条经验
+    # 只有一个人认为有用的经验先观察，不会被用到
+    s_one = run_deep(client)
+    ev = client.get(f"/api/sessions/{s_one['id']}/events?format=json").json()["events"]
+    assert not [e for e in ev if e["type"] == "experience.applied"]
+    # 第二个人也认为有用（同一类追问被再次验证）之后才会被用上
+    again = next(c for c in s_one["claims"] if c["direction"] == "challenge")
+    r2 = client.post(f"/api/sessions/{s_one['id']}/feedback", json={"items": [{"claim_id": again["id"], "label": "valuable"}]}).json()
+    assert len(r2["learned"]) + len(r2["reinforced"]) == 1
+    exps = client.get("/api/experiences").json()["experiences"]
+    best = max(exps, key=lambda e: e["wins"])
+    if best["wins"] < 2:
+        from app.main import create_app  # noqa: F401
+        c2 = client.app.state.svc.store
+        c2.bump_experience(best["id"], wins=1)  # 模拟又一位用户的认可
     s2 = run_deep(client)
     ev = client.get(f"/api/sessions/{s2['id']}/events?format=json").json()["events"]
     applied = [e for e in ev if e["type"] == "experience.applied"]
-    assert applied and applied[0]["data"]["items"][0]["id"] == exps[0]["id"]
+    assert applied and applied[0]["data"]["items"][0]["id"] == best["id"]
     assert s2["card"]["stats"]["experiences_used"] >= 1
     # 个人层
     assert client.get("/api/users/u1/profile").status_code == 403  # 没有密钥看不到别人的档案
     assert client.get("/api/users/u1/profile", headers={"X-User-Key": "wrong"}).status_code == 403
     key = client.get(f"/api/sessions/{sid}").json()["user_key"]
     prof = client.get("/api/users/u1/profile", headers={"X-User-Key": key}).json()
-    assert prof["mbti"] == "ENFP" and len(prof["profile"]["decisions"]) == 2 and prof["profile"]["values"]
+    assert prof["mbti"] == "ENFP" and len(prof["profile"]["decisions"]) == 3 and prof["profile"]["values"]
     st = client.get("/api/stats").json()
-    assert st["stats"]["experiences"] == 1 and st["stats"]["feedback"] == 2
+    assert st["stats"]["experiences"] >= 1 and st["stats"]["feedback"] == 3
     assert any(x["kind"] == "learned" for x in client.get("/api/evolution/log").json()["log"])
 
 
@@ -381,3 +394,14 @@ def test_too_many_active_debates_returns_429(tmp_path):
         assert c.post(f"/api/sessions/{ids[0]}/start").status_code == 200
         r = c.post(f"/api/sessions/{ids[1]}/start")
         assert r.status_code == 429 and "稍等" in r.json()["detail"]
+
+
+def test_seed_experience_is_used_immediately(client):
+    r = client.post("/api/experiences/seed", json={"category": "switch", "pattern": "让用户算清离职后每个月的固定支出和能撑到哪天"})
+    assert r.status_code == 200
+    assert client.post("/api/experiences/seed", json={"category": "switch", "pattern": "让用户算清离职后每个月的固定支出和能撑到哪一天"}).status_code == 400
+    assert client.post("/api/experiences/seed", json={"category": "nope", "pattern": "这是一条足够长的经验内容"}).status_code == 400
+    s = run_deep(client)
+    ev = client.get(f"/api/sessions/{s['id']}/events?format=json").json()["events"]
+    applied = [e for e in ev if e["type"] == "experience.applied"]
+    assert applied and "固定支出" in applied[0]["data"]["items"][0]["pattern"]

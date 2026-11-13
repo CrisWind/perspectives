@@ -636,7 +636,7 @@ class Debate:
                 for i, d in sorted((i, d) for i, d in dups.items() if i not in echo_only):
                     issues.append({
                         "code": "duplicate", "similar_to": d, "claim_text": norm["claims"][i]["text"],
-                        "message": f"和已有论点 {d}「{clip(self._claim_text(d), 60)}」重复，换一个池子里没有的角度，或者直接反驳某条论点",
+                        "message": f"和已有论点 {d}「{clip(self._claim_text(d), 60)}」重复。这个结论已经有人说过了，不要换角度再说一遍：要么提出池子里没有的新话题，要么直接反驳那条结论的漏洞",
                     })
             if persona_issue:
                 issues.append({"code": "persona", "message": "偏离人设：" + persona_issue})

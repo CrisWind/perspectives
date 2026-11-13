@@ -77,8 +77,14 @@ def on_completed(svc, session: dict, card: dict) -> None:
 
 # ---------- 群体层 ----------
 def pick_experiences(store, category: str | None, persona: dict, k: int = 2) -> list[dict]:
-    """给角色挑经验：同一思维框架的优先，得分（拉普拉斯平滑后的有用率）不到一半的不用。"""
-    rows = [e for e in store.experiences(category) if e["score"] >= 0.5]
+    """给角色挑经验。可信才用：
+
+    - 团队整理的种子经验（source=seed）直接可用。
+    - 来自用户的经验至少被 2 个人认为有价值，并且有用率不低于一半，才会拿出来用；
+                    只有一个人说过有用的，先留在库里观察，避免一个人的偏好变成所有人的建议。
+    同一思维框架的优先。
+    """
+    rows = [e for e in store.experiences(category) if e["score"] >= 0.5 and (e.get("source") == "seed" or e["wins"] >= 2)]
     same = [e for e in rows if e["framework_id"] == persona["framework"]]
     rest = [e for e in rows if e["framework_id"] != persona["framework"]]
     return (same + rest)[:k]

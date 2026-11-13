@@ -209,6 +209,7 @@ POST /api/sessions/{id}/feedback
 | `POST /api/evolution/personas/{persona_id}/propose` | 根据"没用"的反馈给角色起草补充准则 |
 | `POST /api/evolution/versions/{version_id}/evaluate` | 后台跑门槛评测，过了才上线 |
 | `POST /api/evolution/personas/{persona_id}/rollback` | 回滚到上一个版本 |
+| `POST /api/experiences/seed` | 录入团队整理的种子经验 `{category, pattern, framework_id?}`，来源标为 seed，可直接被角色使用 |
 
 ## 八、错误
 
