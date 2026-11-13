@@ -33,6 +33,9 @@ KNOWN = {
 # 可用 名字_EXTRA_BODY 环境变量（JSON）覆盖，例如 MIMO_EXTRA_BODY={"thinking":{"type":"enabled"}}
 DEFAULT_EXTRA = {
     "mimo": {"thinking": {"type": "disabled"}},
+    # 经网关调用的 DeepSeek V4 同样默认思考，思考会占满输出额度导致正文为空
+    "dsv4": {"thinking": {"type": "disabled"}},
+    "dsflash": {"thinking": {"type": "disabled"}},
 }
 
 
