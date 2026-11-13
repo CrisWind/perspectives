@@ -102,6 +102,25 @@ class LLM:
         self.mock = settings.force_mock or not self.providers
         self._sems: dict[str, asyncio.Semaphore] = dict()  # 每个提供方单独限流，一家慢不拖累别家
         self._client: httpx.AsyncClient | None = None
+        self.dead: set[str] = set()  # 密钥被拒（401/403）的提供方，本次运行不再调用，避免白白重试
+        self._session_calls: dict[str, int] = dict()
+        self._day = ("", 0)
+
+    def _spend(self, session_id: str | None) -> None:
+        """每次真实发出请求前记一次数，超过上限直接报错，不再发请求。"""
+        s = self.settings
+        today = time.strftime("%Y-%m-%d")
+        day, n = self._day if self._day[0] == today else (today, 0)
+        if s.daily_call_limit and n >= s.daily_call_limit:
+            raise LLMError("daily call limit reached")
+        if session_id and s.session_call_limit:
+            used = self._session_calls.get(session_id, 0)
+            if used >= s.session_call_limit:
+                raise LLMError("session call limit reached")
+            self._session_calls[session_id] = used + 1
+            if len(self._session_calls) > 2000:
+                self._session_calls.pop(next(iter(self._session_calls)))
+        self._day = (day, n + 1)
 
     # ---------- 路由 ----------
     @property
@@ -193,7 +212,9 @@ class LLM:
             self._log(session_id, purpose, "mock", "mock", 0, 0, 0, True, None)
             return str(mock_response(purpose, mock or dict()).get("text", "")), "mock"
         first = provider if provider in self.providers else self.judge
-        order = [first] + [n for n in self.providers if n != first]
+        order = [n for n in [first] + [n for n in self.providers if n != first] if n not in self.dead]
+        if not order:
+            raise LLMError("no usable provider: all API keys were rejected")
         errors = []
         for name in order:
             p = self.providers[name]
@@ -201,6 +222,8 @@ class LLM:
                 return await self._call(p, purpose, system, user, session_id, temperature, max_tokens, json_mode, history), name
             except LLMError as e:
                 errors.append(f"{name}: {e}")
+                if "limit reached" in str(e):
+                    break
                 log.warning("provider %s failed for %s, trying next: %s", name, purpose, e)
         raise LLMError("all providers failed: " + " | ".join(errors))
 
@@ -217,6 +240,9 @@ class LLM:
         headers = {"Authorization": f"Bearer {p.api_key}", "Content-Type": "application/json"}
         err = "unknown"
         for attempt in range(self.settings.llm_max_retries + 1):
+            if p.name in self.dead:
+                break
+            self._spend(session_id)
             if json_mode and p.json_mode:
                 body["response_format"] = {"type": "json_object"}
             else:
@@ -241,7 +267,11 @@ class LLM:
                     err = f"HTTP {r.status_code}: {r.text[:200]}"
                     if r.status_code == 400 and json_mode and p.json_mode:
                         p.json_mode = False  # 这家不支持 JSON 模式，之后靠提示词约束
-                    elif r.status_code in (400, 401, 403, 404):
+                    elif r.status_code in (401, 403):
+                        retryable = False
+                        self.dead.add(p.name)
+                        log.error("provider %s rejected the API key (HTTP %s), disabled until restart", p.name, r.status_code)
+                    elif r.status_code in (400, 404):
                         retryable = False
             except (httpx.HTTPError, KeyError, IndexError, ValueError) as e:
                 ms = int((time.monotonic() - t0) * 1000)

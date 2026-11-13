@@ -405,3 +405,58 @@ def test_seed_experience_is_used_immediately(client):
     ev = client.get(f"/api/sessions/{s['id']}/events?format=json").json()["events"]
     applied = [e for e in ev if e["type"] == "experience.applied"]
     assert applied and "固定支出" in applied[0]["data"]["items"][0]["pattern"]
+
+
+def _real_llm(tmp_path, handler, **kw):
+    import httpx
+    from app.llm import LLM, Provider
+    s = Settings(db_path=str(tmp_path / "t.db"), llm_max_retries=2, **kw)
+    llm = LLM(s, providers=[Provider("a", "http://a", "k", "m"), Provider("b", "http://b", "k", "m")])
+    llm._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return llm
+
+
+def test_rejected_key_is_not_retried(tmp_path, monkeypatch):
+    import httpx
+    from app import llm as llm_mod
+    _sleep = asyncio.sleep
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", lambda *_: _sleep(0))
+    hits = {"a": 0, "b": 0}
+
+    def handler(req):
+        host = req.url.host
+        hits[host] += 1
+        if host == "a":
+            return httpx.Response(401, json={"error": "Invalid token"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    llm = _real_llm(tmp_path, handler)
+
+    async def go():
+        for _ in range(3):
+            assert await llm.text("t", "s", "u", provider="a") == ("ok", "b")
+    asyncio.run(go())
+    assert hits["a"] == 1 and "a" in llm.dead
+
+
+def test_call_limits_stop_spending(tmp_path, monkeypatch):
+    import httpx
+    from app import llm as llm_mod
+    from app.llm import LLMError
+    _sleep = asyncio.sleep
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", lambda *_: _sleep(0))
+    hits = []
+
+    def handler(req):
+        hits.append(1)
+        return httpx.Response(500, text="boom")
+
+    llm = _real_llm(tmp_path, handler, session_call_limit=4, daily_call_limit=0)
+
+    async def go():
+        with pytest.raises(LLMError):
+            await llm.text("t", "s", "u", session_id="s1")
+        with pytest.raises(LLMError, match="limit"):
+            await llm.text("t", "s", "u", session_id="s1")
+    asyncio.run(go())
+    assert len(hits) == 4

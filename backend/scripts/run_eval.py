@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -257,11 +258,30 @@ async def main() -> None:
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--out", default=str(BACKEND_DIR / "eval_out"))
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--max-calls", type=int, default=1500, help="整次评测最多调用模型的次数，到了就停")
     args = ap.parse_args()
     arms = [a for a in args.arms.split(",") if a in ARMS]
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    lock = out_dir / ".running"
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        sys.exit(f"另一次评测正在写 {out_dir}（存在 {lock}）。确认没有在跑后删掉这个文件再试。")
+    os.write(fd, str(os.getpid()).encode())
+    os.close(fd)
+    try:
+        await run(args, arms)
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+async def run(args, arms: list[str]) -> None:
     settings = Settings.from_env()
     settings.db_path = str(Path(args.out) / "eval.db")
     settings.llm_concurrency = max(settings.llm_concurrency, 12)
+    settings.daily_call_limit = args.max_calls
+    settings.session_call_limit = 0
     svc = Services(settings)
     if args.questions:
         qs = yaml.safe_load(Path(args.questions).read_text(encoding="utf-8"))
