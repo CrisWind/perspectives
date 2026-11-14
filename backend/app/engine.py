@@ -8,7 +8,7 @@ import re
 
 from . import evolution, prompts, quality, safety
 from .config import Settings
-from .content import Content, norm_mbti, select_team
+from .content import Content, norm_mbti, pick_quotes, select_team
 from .llm import LLM, LLMError
 from .search import Search
 from .store import Store
@@ -271,8 +271,12 @@ class Debate:
         self.custom = self.opts.get("custom_persona")
         avoid = [self.custom["framework"]] if self.custom else []
         self.team = select_team(svc.content, session.get("mbti"), st.team_size, self.opts.get("team"), avoid)
+        self.sage = svc.content.sages.get(self.opts.get("sage") or "")
+        if self.sage:
+            self.team = [*self.team, self.sage]
         if self.custom:
             self.team = [*self.team, self.custom]
+        self.quotes: dict[str, list[dict]] = dict()
         self.names = {p["id"]: p["name"] for p in self.team}
         self.provider = {p["id"]: svc.llm.persona_provider(i) for i, p in enumerate(self.team)}
         self.index = {p["id"]: i for i, p in enumerate(self.team)}
@@ -509,8 +513,14 @@ class Debate:
         fw = svc.content.framework_of(p)
         system = prompts.persona_system(p, fw, svc.settings.speech_limit, self.patches.get(p["id"]), svc.search.enabled)
         visible = [] if kind == "independent" else list(self.pool)
+        sage_text = ""
+        if p.get("sage"):
+            if p["id"] not in self.quotes:
+                asked = " ".join([self.s["dilemma"], self.s.get("leaning") or "", *(r["text"] for r in self.s["reasons"])])
+                self.quotes[p["id"]] = pick_quotes(p, asked)
+            sage_text = prompts.sage_block(p, self.quotes[p["id"]])
         user = prompts.persona_user(
-            self.s, rnd=self.round, kind=kind, pool=visible, names=self.names,
+            self.s, rnd=self.round, kind=kind, pool=visible, names=self.names, sage=sage_text,
             prev_stance=self.stance.get(p["id"]), focus=focus,
             experiences=self.experiences.get(p["id"], []), profile_note=self.profile_note,
             search_results=self.search_results if p.get("can_search") else [],
@@ -562,6 +572,12 @@ class Debate:
                 j["norm"], j["issues"] = norm, issues
                 if norm is not None:
                     quality.check_sources(norm["claims"], allowed)  # 假来源直接去掉，不值得重写
+                    if j["p"].get("sage"):
+                        users = [self.s["dilemma"], self.s.get("leaning") or "", *(r["text"] for r in self.s["reasons"]),
+                                 *(c["text"] for c in self.pool if c["persona_id"] == "user")]
+                        qi, verified = quality.check_quotes(norm["speech"], norm["claims"], self.quotes.get(j["p"]["id"], []), users)
+                        j["issues"] = j["issues"] + qi
+                        norm["quotes"] = verified
                     j["stance_issue"] = quality.check_stance(
                         norm["stance"], self.stance.get(j["p"]["id"]), j["p"]["id"], self.pool
                     )
@@ -675,6 +691,7 @@ class Debate:
         this = {
             "norm": norm, "dups": dups, "persona_issue": persona_issue, "stance_issue": j["stance_issue"],
             "mismatch": mismatch, "fresh": len(norm["claims"]) - len(dups), "attempts": j["attempts"],
+            "issues": issues,
         }
         if not self.engine_on or not issues:
             j["cand"] = this
@@ -725,8 +742,12 @@ class Debate:
                 src["echoed_by"].append(pid)
         norm["stance"]["note"] = self._humanize(norm["stance"]["note"], pid)
         self.stance[pid] = norm["stance"]
+        quotes = norm.get("quotes") or []
+        if degraded and any(i.get("code") == "fake_quote" for i in cand.get("issues") or []):
+            norm["speech"] = re.sub(r"[“「『\"]([^”」』\"]{6,})[”」』\"]", lambda m: m.group(1), norm["speech"])
+            quotes = []
         self.emit("utterance.completed", {
-            "id": f"u{self.n_utt}", "round": self.round, "kind": kind, "persona_id": pid,
+            "id": f"u{self.n_utt}", "round": self.round, "kind": kind, "persona_id": pid, "quotes": quotes,
             "speech": clip(norm["speech"], int(st.speech_limit * 1.6)), "claims": claims, "echoes": echoes,
             "stance": norm["stance"], "attempts": cand["attempts"], "degraded": degraded,
             "persona_flag": bool(degraded and cand["persona_issue"]),

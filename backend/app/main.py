@@ -93,7 +93,7 @@ class EvaluateIn(BaseModel):
 
 
 # 普通用户不能通过接口设置的选项（评测脚本直接调用引擎，不走接口）
-PUBLIC_OPTIONS = ("quality_engine", "rounds", "team", "use_experience", "use_cache", "skip_questions")
+PUBLIC_OPTIONS = ("quality_engine", "rounds", "team", "use_experience", "use_cache", "skip_questions", "sage")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -191,6 +191,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/personas")
     def personas(svc: Services = Depends(svc_of)):
         return {"personas": [svc.content.public_persona(p) for p in svc.content.personas.values()],
+                "sages": [svc.content.public_persona(p) for p in svc.content.sages.values()],
                 "frameworks": list(svc.content.frameworks.values())}
 
     @app.get("/api/presets")

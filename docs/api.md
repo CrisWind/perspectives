@@ -67,6 +67,20 @@ POST /api/sessions/{id}/feedback  反馈
 - 这个人物的论点被标为有价值时，只更新个人偏好，不进共享经验库。
 - 用「女娲」生成人物时，把它的输出映射成上面几个字段即可，输入输出格式确认后再对接。
 
+### 历史思想家嘉宾（王阳明等）
+
+`GET /api/personas` 返回里多一个 `sages` 数组，是语料库里已经核对过的思想家（字段同 `personas`，另有 `sage: true` 和 `era`）。创建会话时在 `options` 里选一位：
+
+```json
+{"dilemma": "...", "options": {"sage": "wangyangming"}}
+```
+
+- 思想家作为额外一位嘉宾，排在 `team.selected` 的最后（有自定义人物时在它前面）。
+- 他只能引用语料库里**已核对**的原文：发言里加引号的话必须逐字出现在原文里，否则后端打回重写（`quality.rejected`，`code` 为 `fake_quote`）；重写用完后会去掉引号，当作他的转述。
+- `utterance.completed` 事件多一个 `quotes` 数组，是这条发言里核实过的引文：`[{"id", "text", "source", "meaning"}]`。前端要在发言下面把原文和出处单独展示（比如一张引文卡），并标注"按他的思想推演，不是他本人说的现代的事"。
+- 语料库为空（没有任何人核对过的原文）时，`sages` 是空数组，选了也不会出场。
+- 快速模式可以带思想家，缓存键里包含他的编号和语料库版本，换了人或改了原文就不会误用旧缓存。
+
 ## 二、会话对象
 
 `POST /api/sessions`、`/api/quick`、`/clarify`、`GET /api/sessions/{id}` 都返回它。页面刷新后用 `GET /api/sessions/{id}` 可以恢复全部状态。

@@ -118,6 +118,35 @@ def check_sources(claims: list[dict], allowed_urls: set[str]) -> list[dict]:
     return stripped
 
 
+_QUOTED = re.compile(r"[“「『\"]([^”」』\"]{6,})[”」』\"]")
+_PUNCT = re.compile(r"[\s\W_]+", re.U)
+
+
+def _squash(t: str) -> str:
+    return _PUNCT.sub("", t or "")
+
+
+def check_quotes(speech: str, claims: list[dict], quotes: list[dict], user_texts: list[str]) -> tuple[list[dict], list[dict]]:
+    """思想家发言里加引号的话，必须逐字出现在语料库的原文里（忽略标点和空格）。
+
+    引用用户自己的话不算。返回 (问题列表, 已核实的引文)。引号里不是原文的，要求重写，不允许编造古人的话。
+    """
+    corpus = [(q, _squash(q["text"])) for q in quotes]
+    mine = [_squash(u) for u in user_texts if u]
+    issues, verified = [], []
+    text = chr(10).join([speech, *(c["text"] for c in claims)])
+    for m in _QUOTED.finditer(text):
+        frag = _squash(m.group(1))
+        if len(frag) < 4 or any(frag in u for u in mine):
+            continue
+        hit = next((q for q, body in corpus if frag in body), None)
+        if hit is None:
+            issues.append({"code": "fake_quote", "message": f"引号里的话「{clip(m.group(1), 30)}」不在你的原文库里。只能引用给出的原文，不能凭记忆或编造；要么换成库里的原文，要么去掉引号用自己的话讲"})
+        elif hit["id"] not in {v["id"] for v in verified}:
+            verified.append({"id": hit["id"], "text": hit["text"], "source": hit["source"], "meaning": hit["meaning"]})
+    return issues, verified
+
+
 def check_stance(stance: dict, prev: dict | None, persona_id: str, pool: list[dict]) -> dict | None:
     """立场账本：改变立场必须指明被哪条别人的论点说服。返回问题或 None，并在 stance 上写入 changed/justified。"""
     if stance["position"] is None:

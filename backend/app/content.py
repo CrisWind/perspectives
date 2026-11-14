@@ -36,6 +36,24 @@ class Content:
             p.setdefault("rank", 50)
             self.personas[p["id"]] = p
         self.presets: dict[str, dict] = {p["id"]: p for p in data["presets"]}
+        self.sages = self._load_sages(directory, self.frameworks)
+
+    @staticmethod
+    def _load_sages(directory: Path, frameworks: dict) -> dict[str, dict]:
+        """历史思想家。没有人核对过的原文（checked_by 为空）不会被使用，没有任何已核对原文的思想家不会出场。"""
+        path = directory / "sages.yaml"
+        raw = (yaml.safe_load(path.read_bytes()) or []) if path.exists() else []
+        out: dict[str, dict] = {}
+        for s in raw:
+            if s["framework"] not in frameworks:
+                raise ValueError(f"sage {s['id']} uses unknown framework {s['framework']}")
+            quotes = [q for q in s.get("quotes") or [] if str(q.get("checked_by") or "").strip() and q.get("text")]
+            if not quotes:
+                continue
+            s["quotes"] = quotes
+            s.update(role="debater", custom=False, sage=True, rank=60, can_search=False, mbti=None)
+            out[s["id"]] = s
+        return out
 
     def framework_of(self, persona: dict) -> dict:
         return self.frameworks[persona["framework"]]
@@ -46,11 +64,28 @@ class Content:
             "id": p["id"], "name": p["name"], "mbti": p.get("mbti") or None, "role": p["role"],
             "tagline": p.get("tagline", ""), "look": p.get("look", ""), "avatar": p.get("avatar", ""), "color": p.get("color", ""),
             "can_search": bool(p.get("can_search")), "custom": bool(p.get("custom")),
+            "sage": bool(p.get("sage")), "era": p.get("era", ""),
             "framework": {"id": fw["id"], "name": fw["name"], "method": fw["method"]},
         }
         if provider:
             out["provider"] = provider
         return out
+
+
+def pick_quotes(sage: dict, text: str, k: int = 3) -> list[dict]:
+    """按用户的难题找最相关的几条原文：和问题字面重叠最多的优先；一条都不沾边时，取每个主题各一条，保证有话可引。"""
+    from .quality import similarity
+
+    scored = sorted(sage["quotes"], key=lambda q: -similarity(q["meaning"] + " " + " ".join(q.get("topics") or []), text))
+    picked = [q for q in scored if similarity(q["meaning"], text) > 0.02][:k]
+    seen = {t for q in picked for t in q.get("topics") or []}
+    for q in sage["quotes"]:
+        if len(picked) >= k:
+            break
+        if q not in picked and not seen & set(q.get("topics") or []):
+            picked.append(q)
+            seen |= set(q.get("topics") or [])
+    return (picked or sage["quotes"])[:k]
 
 
 def select_team(content: Content, mbti: str | None, size: int, team_ids: list[str] | None = None,

@@ -505,3 +505,88 @@ def test_custom_persona_text_goes_through_safety_check(client):
         "dilemma": "我在国企工作两年，想辞职转行做产品经理", "custom_persona": dict(CUSTOM, style="我不想活了，总想自杀"),
     })
     assert r.status_code == 200 and r.json()["status"] == "safety"
+
+
+def _sage_content(tmp_path):
+    import shutil
+    import yaml
+    from app.config import CONTENT_DIR
+    d = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, d)
+    (d / "sages.yaml").write_text(yaml.safe_dump([{
+        "id": "sage_t", "name": "测试先生", "era": "古代", "framework": "values", "tagline": "t", "style": "s",
+        "bio": [{"text": "曾被贬到边远之地。", "source": "史书"}],
+        "quotes": [
+            {"id": "q1", "text": "知是行之始，行是知之成。", "source": "测试卷上", "meaning": "想和做是一回事", "topics": ["知与行"], "checked_by": "甲"},
+            {"id": "q2", "text": "未核对的一句话不应该被使用。", "source": "测试卷下", "meaning": "x", "topics": ["立志与方向"], "checked_by": ""},
+        ],
+    }], allow_unicode=True), encoding="utf-8")
+    return d
+
+
+def test_only_checked_quotes_are_loaded(tmp_path):
+    from app.content import Content, pick_quotes
+    c = Content(_sage_content(tmp_path))
+    sage = c.sages["sage_t"]
+    assert [q["id"] for q in sage["quotes"]] == ["q1"]
+    assert pick_quotes(sage, "我想辞职创业")[0]["id"] == "q1"
+
+
+def test_unchecked_sage_does_not_appear():
+    from app.content import Content
+    assert Content().sages == dict()  # 正式语料库里只有未核对的示例
+
+
+def test_check_quotes_rejects_invented_words():
+    from app.quality import check_quotes
+    quotes = [{"id": "q1", "text": "知是行之始，行是知之成。", "source": "s", "meaning": "m"}]
+    ok, verified = check_quotes("他说“知是行之始行是知之成”，落到你身上是……", [], quotes, [])
+    assert ok == [] and verified[0]["id"] == "q1"
+    bad, verified = check_quotes("他说“人生如逆旅我亦是行人”，所以你该辞职", [], quotes, [])
+    assert bad and bad[0]["code"] == "fake_quote" and verified == []
+    own, _ = check_quotes("你刚才说“现在的工作学不到东西”，", [], quotes, ["现在的工作学不到东西"])
+    assert own == []
+
+
+def test_sage_joins_debate_and_quotes_are_marked(tmp_path):
+    from app.content import Content
+    content = Content(_sage_content(tmp_path))
+    with TestClient(create_app(make_settings(tmp_path))) as c:
+        c.app.state.svc.content = content
+        r = c.post("/api/sessions", json={"dilemma": "我在国企工作两年，想辞职转行做产品经理", "leaning": "倾向辞职",
+                                          "reasons": ["现在的工作学不到东西"], "options": {"sage": "sage_t"}})
+        assert r.status_code == 200, r.text
+        sid = r.json()["id"]
+        c.post(f"/api/sessions/{sid}/start")
+        s = wait_done(c, sid)
+        assert s["status"] == "completed"
+        team = [e for e in c.get(f"/api/sessions/{sid}/events?format=json").json()["events"] if e["type"] == "team.selected"][0]["data"]["team"]
+        assert team[-1]["id"] == "sage_t" and team[-1]["sage"] is True
+        assert any(u["persona_id"] == "sage_t" for u in s["utterances"])
+        assert any(p["id"] == "sage_t" for p in c.get("/api/personas").json()["sages"])
+
+
+def test_fake_quote_is_rejected_then_stripped_when_retries_run_out(tmp_path, monkeypatch):
+    from app import mock as mock_mod
+    from app.content import Content
+    content = Content(_sage_content(tmp_path))
+    real = mock_mod._speak
+
+    def speak(c):
+        out = real(c)
+        if c["persona"]["id"] == "sage_t":
+            out["speech"] = "他说“人生如逆旅我亦是行人”，所以" + out["speech"]
+        return out
+
+    monkeypatch.setattr(mock_mod, "_speak", speak)
+    with TestClient(create_app(make_settings(tmp_path))) as c:
+        c.app.state.svc.content = content
+        sid = c.post("/api/sessions", json={"dilemma": "我在国企工作两年，想辞职转行做产品经理", "leaning": "倾向辞职",
+                                            "reasons": ["现在的工作学不到东西"], "options": {"sage": "sage_t"}}).json()["id"]
+        c.post(f"/api/sessions/{sid}/start")
+        s = wait_done(c, sid)
+        events = c.get(f"/api/sessions/{sid}/events?format=json").json()["events"]
+        rejected = [e for e in events if e["type"] == "quality.rejected" and e["data"]["persona_id"] == "sage_t"]
+        assert any(i["code"] == "fake_quote" for e in rejected for i in e["data"]["issues"])
+        said = [u for u in s["utterances"] if u["persona_id"] == "sage_t"]
+        assert said and all("人生如逆旅" in u["speech"] and "“" not in u["speech"] for u in said)
