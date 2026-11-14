@@ -14,6 +14,6 @@ uv run uvicorn app.main:create_app --factory --port 8000
 python -m http.server 5173 --directory frontend
 ```
 
-打开 http://localhost:5173/。后端默认地址为 http://localhost:8000；部署到其他地址时需要调整 index.html 中的 apiBase 并配置后端跨域。
+打开 http://localhost:5173/。本地 5173 端口默认访问 http://localhost:8000。部署时请在 `frontend/config.js` 设置线上 HTTPS 后端地址（同源部署可留空），并配置后端跨域。
 
-前端展示名映射旧角色名，角色 ID 保持兼容；后端人物名称仍需统一。自定义第五位辩手尚未接入。
+可在表单中添加自定义第五位辩手，思维框架从后端读取。自定义快速模式实时生成，耗时较长。设置后端 `LLM_MOCK=1` 可用模拟模型测试安全流程。

@@ -212,7 +212,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def quick(body: QuickIn, svc: Services = Depends(svc_of)):
         """快速模式一步到位：选预设题和 MBTI，直接开始。"""
         s = await engine.create_session(svc, {"mode": "quick", **body.model_dump()})
-        engine.start(svc, s["id"])
+        if s["status"] != "safety":
+            engine.start(svc, s["id"])
         return view(svc, svc.store.get_session(s["id"]))
 
     @app.get("/api/sessions/{sid}")
@@ -265,7 +266,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     idle = 0.0
                     continue
                 s = svc.store.get_session(sid)
-                finished = s["status"] in ("completed", "failed") and not svc.running(sid)
+                finished = s["status"] in ("completed", "failed", "safety") and not svc.running(sid)
                 if finished or idle > 900 or await request.is_disconnected():
                     break
                 await svc.wait(sid, 10)

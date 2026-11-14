@@ -244,7 +244,13 @@ async def interject(svc: Services, sid: str, text: str, reason_id: str | None = 
         raise ValueError("text is required")
     crisis = await safety.check(svc.llm, [text], sid)
     if crisis:
-        svc.emit(sid, "safety", crisis)
+        # 先把会话标成 safety，取消时的异常处理就不会再报“已完成/失败”
+        _stop_for_safety(svc, dict(id=sid), crisis, s)
+        svc.pending.pop(sid, None)
+        task = svc.tasks.get(sid)
+        if task and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         return {"queued": False, "safety": crisis}
     item = {"text": text, "reason_id": reason_id, "claim_id": claim_id}
     if s["status"] == "running" and svc.running(sid) and not s.get("card"):
@@ -337,7 +343,8 @@ class Debate:
                     self.svc.store.save_preset_run(self.cache_key(), self.s["preset_id"], self.record)
             await self._after()
         except asyncio.CancelledError:
-            self.svc.emit(self.sid, "status", {"status": "failed"})
+            if self.svc.store.get_session(self.sid)["status"] != "safety":
+                self.svc.emit(self.sid, "status", {"status": "failed"})
             raise
         except Exception as e:  # noqa: BLE001 任何错误都要让前端知道，而不是卡在"进行中"
             log.exception("debate %s failed", self.sid)
@@ -397,7 +404,8 @@ class Debate:
             self.svc.emit(self.sid, "status", {"status": "completed"})
             self.svc.emit(self.sid, "done", {"status": "completed"})
         except asyncio.CancelledError:
-            self.svc.emit(self.sid, "status", {"status": "completed"})
+            if self.svc.store.get_session(self.sid)["status"] != "safety":
+                self.svc.emit(self.sid, "status", {"status": "completed"})
             raise
         except Exception as e:  # noqa: BLE001
             log.exception("followup %s failed", self.sid)

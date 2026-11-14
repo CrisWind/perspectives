@@ -590,3 +590,39 @@ def test_fake_quote_is_rejected_then_stripped_when_retries_run_out(tmp_path, mon
         assert any(i["code"] == "fake_quote" for e in rejected for i in e["data"]["issues"])
         said = [u for u in s["utterances"] if u["persona_id"] == "sage_t"]
         assert said and all("人生如逆旅" in u["speech"] and "“" not in u["speech"] for u in said)
+
+
+def test_quick_safety_does_not_start(client):
+    preset = client.get("/api/presets").json()["presets"][0]["id"]
+    result = client.post("/api/quick", json={
+        "preset_id": preset,
+        "custom_persona": dict(CUSTOM, style="我不想活了，总想自杀"),
+    })
+    assert result.status_code == 200
+    session = result.json()
+    assert session["status"] == "safety" and not session["running"]
+    events = client.get(f"/api/sessions/{session['id']}/events?format=json").json()["events"]
+    assert any(event["type"] == "safety" for event in events)
+    assert events[-1]["type"] == "done" and events[-1]["data"]["status"] == "safety"
+
+
+def test_safety_interjection_cancels_running_debate(tmp_path):
+    async def run():
+        svc = Services(make_settings(tmp_path))
+        try:
+            session = await engine.create_session(svc, {"dilemma": "要不要换城市工作？", "reasons": ["现在的工作没有成长"]})
+            sid = session["id"]
+            svc.store.update_session(sid, status="running")
+            svc.pending[sid] = [{"text": "test"}]
+            svc.spawn(sid, asyncio.sleep(60))
+            await asyncio.sleep(0)
+            result = await engine.interject(svc, sid, "我想自杀")
+            assert result["safety"]["kind"] == "self_harm"
+            assert svc.store.get_session(sid)["status"] == "safety"
+            assert not svc.running(sid) and sid not in svc.pending
+            events = svc.store.events(sid, 0)
+            assert [e["type"] for e in events][-3:] == ["safety", "status", "done"]
+            assert events[-1]["data"]["status"] == "safety"
+        finally:
+            await svc.shutdown()
+    asyncio.run(run())
