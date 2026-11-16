@@ -5,6 +5,16 @@
 
 没有配置模型密钥时，后端使用模拟模型：流程、事件、数据结构和真实模型完全一样，只是发言内容是模板拼的。前端可以先对着它开发。
 
+## 零、两条赛道
+
+产品只做大学生的两类烦恼：**职业选择**（`career`，主赛道）和**生活烦恼**（`life`，宿舍矛盾、换专业、去哪个城市等）。创建会话时后端自动判断，也可以在请求里传 `track` 指定。两条赛道的区别：
+
+| | `career` 职业选择 | `life` 生活烦恼 |
+|---|---|---|
+| 追问 | 专业、年级、做过的事、什么事有劲、什么事耗人 | 事情持续多久、对方怎么说、已经试过什么 |
+| 事实纪律 | 岗位、行业、薪资等事实只能来自岗位对照卡或带日期的联网资料，没有出处的会写成“需要核实” | 只就用户讲的事实检验，不替没出场的人推测动机，不做心理诊断 |
+| 岗位对照卡 | 会加载 | 不加载 |
+
 ## 一、两种用法
 
 ### 快速模式（游园会）
@@ -42,6 +52,16 @@ POST /api/sessions/{id}/feedback  反馈
   "options": {"rounds": 3, "team": ["laomou", "zhangfang"], "quality_engine": true}
 }
 ```
+
+职业选择里，可以再带一个 `profile`（用户自己写的背景，全部可省略）和 `track`：
+
+```json
+{"track": "career",
+ "profile": {"major": "计算机", "grade": "大四", "experience": "做过两个课程项目",
+             "energized": "和人讨论方案时", "drained": "一个人调试到半夜"}}
+```
+
+`profile` 只收这五项，每项最多 300 字，内容同样会过安全检查，角色只按用户的原话理解，不替他补充。`track` 只能是 `career` 或 `life`，不传由后端判断。
 
 只有 `dilemma` 必填。`reasons` 不填时后端从 `dilemma` 里提取。`user_id` 用来记住用户的 MBTI、过去的决定和价值取向，不传就没有个人层的记忆。`options` 全部可省略。
 
@@ -90,7 +110,9 @@ POST /api/sessions/{id}/feedback  反馈
 | `id` | 会话编号 |
 | `status` | `clarifying` 等待回答追问；`ready` 可以开始；`running` 进行中；`completed` 已出决策卡；`failed` 失败；`safety` 用户输入涉及安全风险，已停止，见第九节 |
 | `mode` | `quick` 或 `deep` |
-| `category` | `study` 升学、`job` 求职、`switch` 跳槽、`city` 换城市、`other` |
+| `track` | `career` 职业选择、`life` 生活烦恼 |
+| `category` | 细分类别：`job` 求职选岗、`switch` 跳槽转行、`study` 升学考研（属于 career）；`campus` 校园生活、`relation` 人际关系、`city` 去向与城市、`other`（属于 life） |
+| `profile` | 用户填的背景，没填是 `{}` |
 | `dilemma` `leaning` `facts` | 难题、倾向、已知事实 |
 | `reasons` | `[{"id": "r1", "text": "..."}]` |
 | `questions` | `[{"id": "q1", "text": "...", "answer": null}]` |
@@ -148,7 +170,10 @@ es.addEventListener("done", () => es.close());
 | `status` | `{status}` | 状态变化 |
 | `team.selected` | `{team, quality_engine}` | 组队完成 |
 | `experience.applied` | `{items: [{id, pattern, persona_id}]}` | 这一场用上了经验库里的哪些经验 |
-| `search.done` | `{persona_id, queries, results: [{title, url, snippet}]}` | 查证角色的联网搜索结果 |
+| `roles.loaded` | `{roles: [{id, name, sources, checked_by}]}` | 这一场用上了哪几张已核对的岗位对照卡（只有 career 赛道，且用户提到了对应岗位才有） |
+| `search.done` | `{persona_id, queries, results, all_results, supplement}` | 联网搜索结果。`results` 是这次新查到的，`all_results` 是到目前为止全部的；每条是 `{title, url, snippet, date}`，`date` 是发布日期（`YYYY-MM-DD`），不详时是空字符串，前端要展示日期让用户判断资料新不新。`supplement` 为 true 表示是主持 AI 中途要求补查的 |
+| `moderator.decision` | `{round, action, reason, focus_reason_id, gap?, question?}` | 主持 AI 每轮结束后的决定，见下 |
+| `moderator.question` | `{question, round}` | 主持 AI 要问用户一个只有用户自己知道的事实 |
 | `round.started` | `{round, kind}` | `kind`：`independent` 独立作答、`cross` 交叉质询、`challenge` 挑战不足时的补充轮、`followup` 回应用户异议 |
 | `utterance.started` | `{persona_id, round}` | 角色开始思考 |
 | `quality.rejected` | `{persona_id, round, attempt, issues, speech}` | 发言被质量引擎打回重写 |
@@ -160,6 +185,15 @@ es.addEventListener("done", () => es.close());
 | `safety` | `{message, lines, tips, kind}` | 用户输入涉及自伤、伤害他人或正在遭受侵害。后端不会开辩论，前端必须展示求助信息，见第九节 |
 | `error` | `{message}` | 出错 |
 | `done` | `{status, cached?}` | 这一段结束。`cached: true` 表示是回放的缓存 |
+
+**主持 AI。** 每一轮结束后，主持 AI 看几个数字（本轮新增论点数、被打回次数、还没被检验的理由、立场是否还在变）决定下一步，结果以 `moderator.decision` 发出，`action` 取值：
+
+- `continue`：继续下一轮。`focus_reason_id` 是下一轮最该重点检验的理由，可能为空。
+- `search`：讨论卡在一个可以查资料解决的事实上，`gap` 是要补查的那个事实。随后会有一条 `supplement: true` 的 `search.done`。
+- `ask_user`：缺只有用户自己知道的事实，`question` 是问题。后端**不会停下来等**，问题发出后辩论继续；用户用 `POST /interject` 回答，回答会进入论点池，相关角色回应。前端要把这个问题显示在显眼位置。
+- `wrap_up`：提前收尾，直接出决策卡。
+
+`reason` 是一句给用户看的话，说明为什么这样决定，建议展示在辩论界面上，这就是“规划”过程的可视化。主持 AI 只管流程，不对用户的问题表态。两条硬规则：轮数永远不超过上限（`options.rounds`）；针对用户倾向的挑战不够数时，`wrap_up` 会被改成 `continue`。创建会话时 `options.moderator: false` 可以关掉，关掉后固定跑满轮数。
 
 `quality.rejected` 的 `issues` 每项是 `{code, message, claim_text?, similar_to?}`，`code` 取值：`duplicate` 和已有论点重复、`stance_unjustified` 无理由改变立场、`persona` 偏离人设、`stance_mismatch` 声明的立场和发言内容矛盾、`too_long` 超长、`no_challenge` 没有提出挑战、`format` 格式不可用。这是质量引擎在工作的直接证据，建议在界面或大屏上展示出来。
 
@@ -188,12 +222,17 @@ es.addEventListener("done", () => es.close());
   "recommendations": [{"condition": "如果……", "suggestion": "……"}],
   "next_steps": ["这周能做的小事"],
   "values": ["成长"],
+  "to_verify": [{"what": "要核实的事实", "how": "去问谁或去哪查", "impact": "核实结果怎么影响决定"}],
+  "sources": [{"title": "资料标题", "url": "https://...", "date": "2025-03-04", "cited": true}],
+  "roles_used": [{"id": "product_manager", "name": "产品经理", "checked_by": "核对人"}],
   "stances": [{"persona_id": "laomou", "name": "弈", "initial": "oppose", "final": "oppose", "note": "...",
         "changes": [{"round": 2, "from": "oppose", "to": "conditional", "persuaded_by": "c4", "justified": true}],
  "blocked_changes": 0}],
   "stats": {"claims": 22, "challenges": 18, "echoes": 0, "rewrites": 7, "rounds": 3, "experiences_used": 0}
 }
 ```
+
+`to_verify` 是**待验证清单**，职业选择的核心产出：做决定前还没有被证实、却会改变结论的事实，每条说明核实什么、去哪查或问谁、结果怎么影响决定。前端要把它做成显眼的一栏，不要折叠。`sources` 是这一场查到的全部资料，由后端从真实搜索结果生成，`cited` 为 true 表示有角色在论点里引用了它，`date` 可能为空。`roles_used` 是用到的岗位对照卡。
 
 `verdict`：`solid` 站得住、`shaky` 有条件成立、`weak` 站不住。`claim_ids` 保证都能在论点池里找到，可以做成点击跳转。`recommendations` 至少两条，都带条件。
 
@@ -229,7 +268,8 @@ POST /api/sessions/{id}/feedback
 |---|---|
 | `GET /api/health` | 服务状态、当前用的模型、是否能联网查证 |
 | `GET /api/personas` | 全部角色和思维框架 |
-| `GET /api/presets` | 预设难题卡和类别名称 |
+| `GET /api/presets` | 预设难题卡、类别名称（`categories`）和赛道名称（`tracks`），每张预设带 `track` |
+| `GET /api/roles` | 已核对的岗位对照卡。产品同学还没核对时是空数组 |
 | `GET /api/sessions/{id}/metrics` | 这一场的质量指标 |
 | `POST /api/sessions/{id}/card` | 决策卡生成失败时重新生成 |
 | `GET /api/users/{user_id}/profile` | 个人层记忆，必须带请求头 `X-User-Key`（创建会话的响应里有 `user_key`，前端保存在本地） |

@@ -1,7 +1,7 @@
 """所有提示词集中在这里。每个函数返回 (system, user)。"""
 from __future__ import annotations
 
-from .content import CATEGORIES
+from .content import CATEGORIES, TRACKS, track_of
 from .util import clip
 
 POSITION_CN = {"support": "支持用户的倾向", "oppose": "反对用户的倾向", "conditional": "看条件"}
@@ -16,6 +16,13 @@ def _case(s: dict) -> str:
                     "【用户的理由】", _reasons(s["reasons"])]
     if s.get("facts"):
         lines += ["【已知事实】"] + [f"- {f}" for f in s["facts"]]
+    prof = s.get("profile") or dict()
+    if any(prof.values()):
+        lines.append("【用户的背景】（这是用户自己写的，按他的话理解，不要替他补充）")
+        for key, label in (("major", "专业"), ("grade", "年级"), ("experience", "做过的事"),
+                           ("energized", "做起来有劲的事"), ("drained", "做起来耗人的事")):
+            if prof.get(key):
+                lines.append(f"- {label}：{prof[key]}")
     qa = [q for q in s.get("questions") or [] if q.get("answer")]
     if qa:
         lines += ["【追问与回答】"] + [f"- 问：{q['text']} 答：{q['answer']}" for q in qa]
@@ -42,15 +49,21 @@ def _covered(pool: list[dict]) -> str:
     return chr(10).join(f"- {k}：" + "；".join(v[-8:]) for k, v in seen.items())
 
 
+CAREER_ASK = "用户的专业和年级、做过的项目或实习、做什么事觉得有劲、做什么事觉得耗人、有没有截止日期、手里已有的 offer 条件。不要问查一下就能知道的行业常识。"
+LIFE_ASK = "事情持续多久了、对方（室友、同学、家人）怎么说怎么做、用户已经试过什么、有没有必须做决定的时间。只问事实，不问隐私细节，不评价对方的人品。"
+
+
 def clarify(dilemma: str, leaning: str, reasons: list[str], facts: list[str], max_questions: int) -> tuple[str, str]:
     cats = "、".join(f"{k}（{v}）" for k, v in CATEGORIES.items())
-    system = f"""你是决策辅导流程的第一步：把用户的话整理成可以逐条检验的理由清单。
+    tracks = "、".join(f"{k}（{v}）" for k, v in TRACKS.items())
+    system = f"""你是决策辅导流程的第一步：把用户的话整理成可以逐条检验的理由清单。服务对象是大学生。
 要求：
 1. reasons：用户支持自己倾向的理由，每条一句话，用用户自己的意思，不要替用户添加新理由，最多 5 条。用户已经列出理由时，只做必要的拆分和精简。
 2. leaning：用户目前倾向的选择，一句话。用户没说就写"还没有明确倾向"。
-3. category：从 {cats} 里选一个。
-4. questions：如果缺少会明显影响判断的关键事实（比如存款能撑多久、有没有截止日期、对方给的条件），提出最多 {max_questions} 个追问；信息已经够用就给空数组。不要问用户已经说过的事。
-只输出 JSON：{{"category": "...", "leaning": "...", "reasons": ["..."], "questions": ["..."]}}"""
+3. category：从 {cats} 里选一个。求职选岗、跳槽转行、升学考研属于职业选择（career）；校园生活（宿舍、社团、专业）、人际关系、去向与城市属于生活烦恼（life）。
+4. track：从 {tracks} 里选一个，和 category 对应。
+5. questions：如果缺少会明显影响判断的关键事实，提出最多 {max_questions} 个追问；信息已经够用就给空数组。不要问用户已经说过的事。职业选择的追问重点：{CAREER_ASK} 生活烦恼的追问重点：{LIFE_ASK}
+只输出 JSON：{{"category": "...", "track": "...", "leaning": "...", "reasons": ["..."], "questions": ["..."]}}"""
     user = f"【用户的难题】{dilemma}\n【用户说的倾向】{leaning or '（没说）'}\n"
     if reasons:
         user += "【用户列出的理由】\n" + "\n".join(f"- {r}" for r in reasons) + "\n"
@@ -59,7 +72,7 @@ def clarify(dilemma: str, leaning: str, reasons: list[str], facts: list[str], ma
     return system, user
 
 
-def persona_system(p: dict, fw: dict, limit: int, patch: dict | None, search_on: bool) -> str:
+def persona_system(p: dict, fw: dict, limit: int, patch: dict | None, search_on: bool, track: str = "career") -> str:
     moves = "；".join(fw.get("moves") or [])
     s = f"""你是「{p['name']}」，决策辩论产品 Perspectives 里的一个角色。几个角色一起检验用户的理由，帮用户想清楚。
 
@@ -77,11 +90,26 @@ def persona_system(p: dict, fw: dict, limit: int, patch: dict | None, search_on:
 6. speech 是给用户看的话，保持你的说话风格，用"你"称呼用户。长度是硬性要求：不超过 {limit} 字，超过会被打回。一次只说最要紧的一两点，不要面面俱到。
 7. speech 里不要出现 r1、c3 这类编号，用户看不懂：提到理由时引用用户的原话，提到别人的论点时说角色的名字和大意。编号只填在 claims 的 reason_id 和 targets 字段里，claims 的 text 里也不要写编号。
 8. claims 是 speech 里实际提出的论点，每条一句话，1 到 3 条。"""
-    if p.get("can_search"):
-        if search_on:
-            s += "\n【查证】你负责查证。用户消息里会给出联网查到的资料；引用时在论点的 source 里填资料的原始链接，只能用给出的链接。资料里没有的事不要当成事实。"
+    if track == "career":
+        s += """
+【职业选择的事实纪律】用户会拿你的话做求职和选岗的决定，所以：
+1. 岗位职责、行业现状、薪资、就业形势这类事实，只能来自用户消息里的【岗位对照卡】和【联网查到的资料】，或用户自己说的。没有出处的，不要当成事实说，要说"这一点需要核实"，并告诉用户该去查什么、问谁。
+2. 引用联网资料时要带上它的日期。资料超过两年，要提醒用户行情可能已变。
+3. 不要预测某个岗位的薪资、前景或"好不好找工作"，不要给岗位排名。
+4. 分不清两个岗位差别时，用对照卡里的区别来讲，不要凭印象。"""
+    else:
+        s += """
+【生活烦恼的边界】用户说的是自己的生活处境，你不是心理咨询师，也不评判别人的人品。
+1. 只就用户讲出来的事实和理由检验，不替没出场的人（室友、家人）推测动机，更不给他们下结论。
+2. 不做心理诊断，不说"你有某某问题"。
+3. 对用户的情绪认真对待，但你的任务仍是帮他把理由想清楚，不是安慰，也不是一味站在他这边。"""
+    if search_on:
+        if p.get("can_search"):
+            s += "\n【查证】你负责查证。用户消息里会给出联网查到的资料，每条带日期；引用时在论点的 source 里填资料的原始链接，只能用给出的链接。资料里没有的事不要当成事实。"
         else:
-            s += "\n【查证】你负责查证，但这一场没有联网资料。source 一律填 null；遇到需要数据支撑的理由，指出具体该去查什么、去哪里查。"
+            s += "\n【资料】用户消息里如果有联网查到的资料（带日期），你可以引用，引用时在论点的 source 里填它的原始链接，只能用给出的链接。没有的事实不要凭印象补。"
+    elif p.get("can_search"):
+        s += "\n【查证】你负责查证，但这一场没有联网资料。source 一律填 null；遇到需要数据支撑的理由，指出具体该去查什么、去哪里查。"
     if patch:
         s += f"\n【补充准则（第 {patch['version']} 版，来自用户反馈）】{patch['patch']}"
     if p.get("sage"):
@@ -128,10 +156,14 @@ def persona_user(
     need_challenge: bool,
     rejection: list[dict] | None,
     sage: str = "",
+    roles: str = "",
+    steer: str = "",
 ) -> str:
     parts = [_case(s)]
     if sage:
         parts.append(sage)
+    if roles:
+        parts.append("【岗位对照卡】（团队核对过的资料，可以当事实引用；没有的内容不要补）" + chr(10) + roles)
     if profile_note:
         parts.append("【这位用户的过往】（用来发现他这次的理由和过去看重的东西有没有矛盾，不是用来迎合他）\n" + profile_note)
     if experiences:
@@ -140,8 +172,10 @@ def persona_user(
             + "\n".join(f"- {e['pattern']}" for e in experiences)
         )
     if search_results:
-        parts.append("【联网查到的资料】\n" + "\n".join(
-            f"- {r['title']}｜{r['snippet']}｜链接：{r['url']}" for r in search_results))
+        parts.append("【联网查到的资料】（日期是资料的发布日期，空白表示不详）\n" + "\n".join(
+            f"- {r['title']}｜{r.get('date') or '日期不详'}｜{r['snippet']}｜链接：{r['url']}" for r in search_results))
+    if steer:
+        parts.append("【主持人的指示】" + steer)
     if kind == "independent":
         parts.append("【本轮】第 1 轮，独立作答。你看不到其他角色的发言。用你的思维框架检验用户的理由，挑你认为最关键的一两条说。")
     else:
@@ -191,10 +225,46 @@ def judge(p: dict, fw: dict, speech: str, claims: list[dict], pool: list[dict], 
     return system, user
 
 
-def queries(s: dict) -> tuple[str, str]:
-    system = """你在为一场决策辩论做事实查证。从用户的理由和事实里，挑出最值得联网核实的一到两个事实性问题（比如行业薪资、录取比例、政策），写成搜索引擎用的中文搜索词。纯属个人感受的理由不用查。
+def queries(s: dict, known: list[str] | None = None, gap: str = "") -> tuple[str, str]:
+    """生成搜索词。gap 是主持人指出的、辩论中缺的那个事实；known 是已经搜过的词，不要重复。"""
+    system = """你在为一场决策辩论做事实查证，服务对象是大学生。挑出最值得联网核实的一到两个事实性问题（比如岗位的真实工作内容、招聘要求、行业近况、升学政策、录取比例），写成搜索引擎用的中文搜索词。
+- 纯属个人感受的理由不用查。
+- 搜岗位和行业时，搜索词里带上年份（今年），优先找近两年的资料。
+- 不要重复"已经搜过"的词。
 只输出 JSON：{"queries": ["..."]}"""
-    return system, _case(s)
+    user = _case(s)
+    nl = chr(10) * 2
+    if gap:
+        user += nl + "【这次要补查的事实】" + gap
+    if known:
+        user += nl + "【已经搜过的词】" + "；".join(known)
+    return system, user
+
+
+def moderator(s: dict, pool: list[dict], names: dict[str, str], rnd: int, max_rounds: int, signals: dict,
+              searched: list[str], can_search: bool) -> tuple[str, str]:
+    """主持 AI：每轮结束后判断下一步。只管流程，不给结论，不替用户做决定。"""
+    system = """你是这场决策辩论的主持人。你只管流程：判断讨论进行到哪一步，下一步该做什么。你不发表对用户问题的看法，不给结论，不替用户做决定。
+
+每轮结束后，你从下面四种动作里选一个：
+- continue：还有用户的理由没被检验透，或者出现了新的分歧，继续下一轮。
+- search：讨论卡在一个可以靠查资料解决的事实上（比如两个岗位到底差在哪、某个要求是否真实），而且还没查过。在 gap 里写清要补查的那个具体事实。只有"可联网"为是时才能选。
+- ask_user：缺少只有用户自己才知道的关键事实，别人怎么辩都没用。在 question 里写一个具体的问题。
+- wrap_up：每条理由都已被检验过，最近一轮几乎没有新的实质论点，各角色立场稳定。
+
+判断依据只看下面给出的数字和论点池，不要凭感觉。拿不准时选 continue，但到达轮数上限时必须选 wrap_up 或 ask_user。
+reason 用一句话向用户说明你为什么这样决定，给用户看，不要出现编号。
+只输出 JSON：{"action": "continue|search|ask_user|wrap_up", "reason": "...", "gap": "要补查的事实或空字符串", "question": "要问用户的问题或空字符串", "focus": "r1 或 null，下一轮最该重点检验的理由"}"""
+    nl = chr(10)
+    user = nl.join([
+        _case(s), "", "【论点池】", _pool(pool, names, limit=60), "",
+        f"【进度】第 {rnd} 轮结束，上限 {max_rounds} 轮。",
+        f"本轮新增不重复论点：{signals['new_claims']} 条；本轮被打回重写：{signals['rewrites']} 次。",
+        f"还没被任何论点检验过的理由：{', '.join(signals['untested']) or '无'}。",
+        f"立场还在变化的角色：{', '.join(signals['moving']) or '无'}。",
+        f"可联网：{'是' if can_search else '否'}。已经搜过：{'；'.join(searched) or '无'}。",
+    ])
+    return system, user
 
 
 def card(s: dict, pool: list[dict], names: dict[str, str], stances: list[str], profile_note: str) -> tuple[str, str]:
@@ -208,8 +278,9 @@ def card(s: dict, pool: list[dict], names: dict[str, str], stances: list[str], p
 6. values：从用户的理由和回应里看出他真正看重的东西，2 到 4 个短词。
 7. 结论要如实：经过质疑仍然成立的理由给 solid，不要因为有人质疑过就一律判 shaky 或 weak；也不要因为用户想听就给 solid。理由大多站得住时，建议里要明确说可以按用户的倾向去做，并指出还需要留意什么。
 8. 数字和时间以用户给出的事实为准：角色之间说法不一致，或和用户给的事实对不上时，按用户的事实重新算；算不出来的不写具体数字，写“需要核实”。
+9. to_verify：待验证清单，2 到 4 条。列出做决定前还没有被证实、却会改变结论的事实。每条写清：要核实什么（what）、去问谁或去哪查（how）、核实结果怎么影响决定（impact）。只写辩论里确实没有出处的事实，不要为了凑数编造。
 只根据辩论记录写，不加入记录里没有的事实。
-只输出 JSON：{"reason_checks": [{"reason_id": "r1", "verdict": "solid|shaky|weak", "summary": "...", "claim_ids": ["c1"]}], "blind_spots": [{"text": "...", "claim_ids": ["c2"]}], "core_tradeoff": {"a": "...", "b": "...", "summary": "..."}, "recommendations": [{"condition": "...", "suggestion": "..."}], "next_steps": ["..."], "values": ["..."]}"""
+只输出 JSON：{"reason_checks": [{"reason_id": "r1", "verdict": "solid|shaky|weak", "summary": "...", "claim_ids": ["c1"]}], "blind_spots": [{"text": "...", "claim_ids": ["c2"]}], "core_tradeoff": {"a": "...", "b": "...", "summary": "..."}, "recommendations": [{"condition": "...", "suggestion": "..."}], "next_steps": ["..."], "values": ["..."], "to_verify": [{"what": "...", "how": "...", "impact": "..."}]}"""
     user = _case(s) + "\n\n【论点池】\n" + _pool(pool, names, limit=80)
     if stances:
         user += "\n\n【各角色最终立场】\n" + "\n".join(stances)

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from . import engine, evolution, metrics
 from .config import Settings
-from .content import CATEGORIES
+from .content import CATEGORIES, TRACKS
 from .engine import Busy, Services
 from .quality import similarity
 
@@ -31,7 +31,18 @@ class CustomPersonaIn(BaseModel):
     look: str = Field(default="", max_length=120)
 
 
+class ProfileIn(BaseModel):
+    """用户自己写的背景。职业选择里用来让角色按他的真实情况检验，不由系统推测。"""
+    major: str = Field(default="", max_length=100)
+    grade: str = Field(default="", max_length=40)
+    experience: str = Field(default="", max_length=300)
+    energized: str = Field(default="", max_length=300)
+    drained: str = Field(default="", max_length=300)
+
+
 class SessionIn(BaseModel):
+    track: str | None = Field(default=None, max_length=16)
+    profile: ProfileIn | None = None
     dilemma: str = Field(default="", max_length=1500)
     leaning: str = Field(default="", max_length=300)
     reasons: list[str] = Field(default_factory=list, max_length=8)
@@ -93,7 +104,7 @@ class EvaluateIn(BaseModel):
 
 
 # 普通用户不能通过接口设置的选项（评测脚本直接调用引擎，不走接口）
-PUBLIC_OPTIONS = ("quality_engine", "rounds", "team", "use_experience", "use_cache", "skip_questions", "sage")
+PUBLIC_OPTIONS = ("quality_engine", "rounds", "team", "use_experience", "use_cache", "skip_questions", "sage", "moderator")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -196,12 +207,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/presets")
     def presets(svc: Services = Depends(svc_of)):
-        return {"presets": list(svc.content.presets.values()), "categories": CATEGORIES}
+        return {"presets": list(svc.content.presets.values()), "categories": CATEGORIES, "tracks": TRACKS}
+
+    @app.get("/api/roles")
+    def roles(svc: Services = Depends(svc_of)):
+        """已经核对过的岗位对照卡。没有人核对过的不会出现。"""
+        return {"roles": list(svc.content.roles.values())}
 
     # ---------- 会话 ----------
     @app.post("/api/sessions")
     async def create(body: SessionIn, svc: Services = Depends(svc_of)):
         req = body.model_dump()
+        if req.get("track") not in (None, *TRACKS):
+            raise ValueError("track 必须是 career 或 life")
         if req["mode"] not in ("quick", "deep"):
             raise ValueError("mode must be quick or deep")
         req["options"] = {k: v for k, v in req["options"].items() if k in PUBLIC_OPTIONS}
@@ -315,8 +333,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/experiences/seed", dependencies=[Depends(admin)])
     def add_seed(body: SeedIn, svc: Services = Depends(svc_of)):
         """录入团队整理的种子经验（访谈得来的、官方资料里总结的）。来源标记为 seed，可直接被角色使用。"""
-        if body.category not in ("study", "job", "switch", "city", "other"):
-            raise ValueError("category 必须是 study/job/switch/city/other 之一")
+        if body.category not in CATEGORIES:
+            raise ValueError("category 必须是 " + "/".join(CATEGORIES) + " 之一")
         if body.framework_id and body.framework_id not in svc.content.frameworks:
             raise ValueError("unknown framework_id")
         if any(similarity(e["pattern"], body.pattern) >= 0.6 for e in svc.store.experiences(body.category)):

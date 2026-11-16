@@ -8,7 +8,7 @@ import re
 
 from . import evolution, prompts, quality, safety
 from .config import Settings
-from .content import Content, norm_mbti, pick_quotes, select_team
+from .content import CATEGORIES, Content, norm_mbti, pick_quotes, pick_roles, role_block, select_team, track_of
 from .llm import LLM, LLMError
 from .search import Search
 from .store import Store
@@ -98,6 +98,15 @@ def _custom_persona(svc: Services, raw: dict) -> dict:
     }
 
 
+PROFILE_KEYS = ("major", "grade", "experience", "energized", "drained")
+
+
+def _profile(raw: dict | None) -> dict:
+    """用户自己写的背景（专业、年级、做过的事、什么事有劲、什么事耗人）。只收这几项，每项限长。"""
+    raw = raw if isinstance(raw, dict) else dict()
+    return {k: clip(str(raw.get(k) or ""), 300) for k in PROFILE_KEYS if str(raw.get(k) or "").strip()}
+
+
 def _reason_list(texts: list[str]) -> list[dict]:
     clean = [clip(t, 200) for t in texts if isinstance(t, str) and t.strip()]
     return [{"id": f"r{i + 1}", "text": t} for i, t in enumerate(clean[:6])]
@@ -108,7 +117,7 @@ def _stop_for_safety(svc: Services, base: dict, crisis: dict, session: dict | No
     sid = base["id"]
     if session is None:
         session = svc.store.create_session(dict(
-            base, dilemma="（内容涉及安全提示，未保存）", leaning="", category="other", reasons=[], facts=[], questions=[],
+            base, dilemma="（内容涉及安全提示，未保存）", leaning="", category="other", track="life", reasons=[], facts=[], questions=[],
             status="safety", options=dict(safety_kind=crisis["kind"]),
         ))
     else:
@@ -136,7 +145,8 @@ async def create_session(svc: Services, req: dict) -> dict:
         mbti = (svc.store.get_profile(user_id) or dict()).get("mbti")
     texts = [custom[k] for k in ("name", "tagline", "style", "look")] if custom else []
     if not req.get("preset_id"):
-        texts = [req.get("dilemma"), req.get("leaning"), *(req.get("reasons") or []), *(req.get("facts") or []), *texts]
+        texts = [req.get("dilemma"), req.get("leaning"), *(req.get("reasons") or []), *(req.get("facts") or []),
+                 *_profile(req.get("profile")).values(), *texts]
     if texts:
         crisis = await safety.check(svc.llm, [t for t in texts if isinstance(t, str)], sid)
         if crisis:
@@ -149,7 +159,7 @@ async def create_session(svc: Services, req: dict) -> dict:
     if preset:
         base.update(
             dilemma=preset["dilemma"], leaning=preset["leaning"], category=preset["category"],
-            reasons=_reason_list(preset["reasons"]), facts=list(preset.get("facts") or []),
+            track=track_of(preset["category"]), reasons=_reason_list(preset["reasons"]), facts=list(preset.get("facts") or []),
             questions=[], status="ready",
         )
     else:
@@ -172,11 +182,12 @@ async def create_session(svc: Services, req: dict) -> dict:
         reasons = _reason_list(out.get("reasons") if isinstance(out.get("reasons"), list) else []) \
             or _reason_list(given) or _reason_list([dilemma])
         qs = [q for q in (out.get("questions") or []) if isinstance(q, str) and q.strip()][:max_q]
-        cat = out.get("category")
+        cat = out.get("category") if out.get("category") in CATEGORIES else "other"
         base.update(
             dilemma=clip(dilemma, 1000),
             leaning=clip(str(out.get("leaning") or req.get("leaning") or ""), 200),
-            category=cat if cat in ("study", "job", "switch", "city", "other") else "other",
+            category=cat, track=req.get("track") if req.get("track") in ("career", "life") else track_of(cat),
+            profile=_profile(req.get("profile")),
             reasons=reasons, facts=facts,
             questions=[{"id": f"q{i + 1}", "text": q, "answer": None} for i, q in enumerate(qs)],
             status="clarifying" if qs else "ready",
@@ -304,6 +315,10 @@ class Debate:
                 self.patches[p["id"]] = svc.store.patch_for(p["id"])
         self.experiences: dict[str, list[dict]] = dict()
         self.search_results: list[dict] = []
+        self.searched: list[str] = []  # 已经搜过的词，主持人补查时避免重复
+        self.steer = ""  # 主持人给下一轮的指示
+        self.roles: list[dict] = []
+        self.moderator_on = bool(self.opts.get("moderator", svc.settings.moderator)) and self.engine_on
         self.profile_note = evolution.profile_note(svc.store, session.get("user_id"), self.sid)
         self.record: list[dict] = []
 
@@ -321,7 +336,7 @@ class Debate:
     def cache_key(self) -> str:
         parts = [
             self.s.get("preset_id") or "", ",".join(p["id"] for p in self.team), self.svc.content.version,
-            str(self.rounds), ",".join(self.svc.llm.persona_pool),
+            str(self.rounds), ",".join(self.svc.llm.persona_pool), "m" if self.moderator_on else "-",
             ",".join(f"{k}:{v['id']}" for k, v in sorted(self.patches.items()) if v),
         ]
         return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
@@ -367,9 +382,12 @@ class Debate:
     async def _live(self) -> None:
         self.emit("team.selected", {"team": self.public_team(), "quality_engine": self.engine_on})
         self._load_experiences()
+        self._load_roles()
         await self._search()
         await self._round_independent()
         for _ in range(self.rounds - 1):
+            if self.moderator_on and not await self._moderate():
+                break
             await self._round_cross()
         await self._challenge_floor()
         await self._card("card.ready")
@@ -427,26 +445,99 @@ class Debate:
         if items:
             self.emit("experience.applied", {"items": items})
 
-    async def _search(self) -> None:
-        searcher = next((p for p in self.team if p.get("can_search")), None)
-        if not searcher or not self.svc.search.enabled:
-            return
-        system, user = prompts.queries(self.s)
+    def _load_roles(self) -> None:
+        """用户提到的岗位，有核对过的对照卡就带上；没有就什么都不带，不让角色凭印象讲。"""
+        asked = " ".join([self.s["dilemma"], self.s.get("leaning") or "", *(r["text"] for r in self.s["reasons"])])
+        self.roles = pick_roles(self.svc.content, asked) if self.s.get("track") == "career" else []
+        if self.roles:
+            self.emit("roles.loaded", {"roles": [
+                {"id": r["id"], "name": r["name"], "sources": r["sources"], "checked_by": r["checked_by"]} for r in self.roles]})
+
+    async def _search(self, gap: str = "") -> bool:
+        """联网查证。开场搜一次；主持人发现缺事实时可以补查（受 max_searches 限制）。返回这次有没有新资料。"""
+        st = self.svc.settings
+        if not self.svc.search.enabled or len(self.searched) >= st.max_searches * 2:
+            return False
+        system, user = prompts.queries(self.s, self.searched, gap)
         try:
             out, _ = await self.svc.llm.json("queries", system, user, provider=self.svc.llm.judge,
                         session_id=self.sid, temperature=0.2, max_tokens=200,
-                        mock={"dilemma": self.s["dilemma"]})
+                        mock={"dilemma": self.s["dilemma"] + (gap or "")})
         except LLMError:
-            return
-        qs = [q for q in out.get("queries") or [] if isinstance(q, str) and q.strip()][:2]
+            return False
+        qs = [q for q in out.get("queries") or [] if isinstance(q, str) and q.strip() and q not in self.searched][:2]
+        if not qs:
+            return False
+        self.searched += qs
         found = await asyncio.gather(*(self.svc.search.search(q) for q in qs))
-        seen = set()
+        seen = {r["url"] for r in self.search_results}
+        fresh = []
         for rows in found:
             for r in rows:
                 if r["url"] not in seen:
                     seen.add(r["url"])
-                    self.search_results.append(r)
-        self.emit("search.done", {"persona_id": searcher["id"], "queries": qs, "results": self.search_results})
+                    fresh.append(r)
+        self.search_results += fresh
+        searcher = next((p for p in self.team if p.get("can_search")), None)
+        self.emit("search.done", {"persona_id": searcher["id"] if searcher else None, "queries": qs, "results": fresh,
+                                  "all_results": self.search_results, "supplement": bool(gap)})
+        return bool(fresh)
+
+    def _signals(self) -> dict:
+        """主持人做判断的依据：全部是数得出来的数字，不是感觉。"""
+        mine = self.persona_claims()
+        last = [c for c in mine if c["round"] == self.round]
+        tested = {c.get("reason_id") for c in mine if c.get("reason_id")}
+        rows = self.svc.store.stances(self.sid)
+        moving = []
+        for p in self.team:
+            seen = [r for r in rows if r["persona_id"] == p["id"]]
+            if len(seen) >= 2 and seen[-1]["position"] != seen[-2]["position"]:
+                moving.append(p["name"])
+        rewrites = sum(1 for e in self.svc.store.events(self.sid, types=("quality.rejected",)) if e["data"].get("round") == self.round)
+        return {
+            "new_claims": len(last), "rewrites": rewrites, "moving": moving,
+            "untested": [r["id"] for r in self.s["reasons"] if r["id"] not in tested],
+        }
+
+    async def _moderate(self) -> bool:
+        """每轮结束后，主持 AI 决定下一步。返回 True 继续下一轮，False 收尾。
+
+        主持人只管流程，不对用户的问题表态。出错或输出不可用时一律继续，宁可多辩一轮也不让流程卡住。
+        到达轮数上限时由调用方的循环结束，不依赖主持人。
+        """
+        sig = self._signals()
+        can_search = self.svc.search.enabled and len(self.searched) < self.svc.settings.max_searches * 2
+        system, user = prompts.moderator(self.s, self.pool, self.names, self.round, self.rounds, sig, self.searched, can_search)
+        try:
+            out, _ = await self.svc.llm.json("moderator", system, user, provider=self.svc.llm.judge, session_id=self.sid,
+                        temperature=0.0, max_tokens=300, mock=dict(signals=sig, round=self.round, rounds=self.rounds, can_search=can_search))
+        except LLMError:
+            return True
+        action = out.get("action") if out.get("action") in ("continue", "search", "ask_user", "wrap_up") else "continue"
+        reason = clip(str(out.get("reason") or ""), 120)
+        focus = out.get("focus") if out.get("focus") in {r["id"] for r in self.s["reasons"]} else None
+        gap = clip(str(out.get("gap") or ""), 100)
+        if action == "search" and not (can_search and gap):
+            action = "continue"
+        # 底线：挑战不够数时不能收尾，防止主持人把"讨好"的局面直接结束
+        enough = sum(1 for c in self.persona_claims() if c["direction"] == "challenge") >= self.svc.settings.min_challenges
+        if action == "wrap_up" and not enough:
+            action, reason = "continue", "针对你倾向的挑战还不够，再辩一轮"
+        decision = {"round": self.round, "action": action, "reason": reason, "focus_reason_id": focus}
+        if action == "search":
+            decision["gap"] = gap
+        if action == "ask_user":
+            decision["question"] = clip(str(out.get("question") or ""), 150)
+        self.emit("moderator.decision", decision)
+        if action == "wrap_up":
+            return False
+        if action == "ask_user" and decision.get("question"):
+            self.emit("moderator.question", {"question": decision["question"], "round": self.round})
+        if action == "search":
+            await self._search(gap)
+        self.steer = ("请重点检验理由 " + focus + "。" if focus else "") + (f"补查到了新的资料，请核对后再说。" if action == "search" else "")
+        return True
 
     def _add_user_claims(self, items: list[dict]) -> list[dict]:
         out = []
@@ -519,7 +610,8 @@ class Debate:
         need_challenge: bool, rejection: list[dict] | None, attempt: int) -> dict:
         svc = self.svc
         fw = svc.content.framework_of(p)
-        system = prompts.persona_system(p, fw, svc.settings.speech_limit, self.patches.get(p["id"]), svc.search.enabled)
+        system = prompts.persona_system(p, fw, svc.settings.speech_limit, self.patches.get(p["id"]), svc.search.enabled,
+                                        self.s.get("track") or "career")
         visible = [] if kind == "independent" else list(self.pool)
         sage_text = ""
         if p.get("sage"):
@@ -531,7 +623,7 @@ class Debate:
             self.s, rnd=self.round, kind=kind, pool=visible, names=self.names, sage=sage_text,
             prev_stance=self.stance.get(p["id"]), focus=focus,
             experiences=self.experiences.get(p["id"], []), profile_note=self.profile_note,
-            search_results=self.search_results if p.get("can_search") else [],
+            search_results=self.search_results, roles=role_block(self.roles) if self.roles else "", steer=self.steer,
             user_claims=user_claims, need_challenge=need_challenge, rejection=rejection,
         )
         out, _ = await svc.llm.json(
@@ -826,6 +918,18 @@ class Debate:
         card = self._plain(self._clean_card(out))
         pc = self.persona_claims()
         card["stances"] = summary
+        cited = {u for c in self.persona_claims() for u in c.get("sources") or []}
+        card["sources"] = [
+            {"title": r["title"], "url": r["url"], "date": r.get("date") or "", "cited": r["url"] in cited}
+            for r in self.search_results
+        ]
+        card["roles_used"] = [{"id": r["id"], "name": r["name"], "checked_by": r["checked_by"]} for r in self.roles]
+        if self.s.get("track") == "career" and not card["to_verify"]:
+            card["to_verify"] = [{
+                "what": "这场讨论里涉及的岗位和行业事实没有逐条核实",
+                "how": "找一位在这个岗位上工作的学长学姐，或对照最近的招聘启事",
+                "impact": "如果实际情况和讨论里的假设不同，上面的建议要重新判断",
+            }]
         card["stats"] = {
             "claims": len(pc),
             "challenges": sum(1 for c in pc if c["direction"] == "challenge"),
@@ -876,6 +980,11 @@ class Debate:
             "recommendations": recs,
             "next_steps": [clip(str(x), 120) for x in out.get("next_steps") or [] if isinstance(x, str)][:3],
             "values": [clip(str(x), 12) for x in out.get("values") or [] if isinstance(x, str)][:4],
+            "to_verify": [
+                {"what": clip(str(x.get("what")), 120), "how": clip(str(x.get("how") or ""), 120),
+                 "impact": clip(str(x.get("impact") or ""), 120)}
+                for x in out.get("to_verify") or [] if isinstance(x, dict) and x.get("what")
+            ][:4],
         }
 
 

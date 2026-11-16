@@ -1,4 +1,8 @@
-"""联网查证。支持 Tavily 和博查；没配置时 enabled 为 False，查证角色会被告知不能引用来源。"""
+"""联网查证。支持 Tavily 和博查；没配置时 enabled 为 False，查证角色会被告知不能引用来源。
+
+每条结果带发布日期（拿得到就带，拿不到就是空字符串）。职业选择里的信息时效很重要，
+前端和决策卡都要把日期展示出来，让用户自己判断资料新不新。
+"""
 from __future__ import annotations
 
 import logging
@@ -11,6 +15,12 @@ from .util import clip
 log = logging.getLogger("perspectives.search")
 
 
+def _day(v) -> str:
+    """日期统一成 YYYY-MM-DD；认不出来就返回空字符串，不猜。"""
+    s = str(v or "").strip()
+    return s[:10] if len(s) >= 10 and s[4] in "-/" and s[:4].isdigit() else ""
+
+
 class Search:
     def __init__(self, settings: Settings):
         self.provider = settings.search_provider
@@ -18,7 +28,7 @@ class Search:
         self.enabled = bool(self.key) and self.provider in ("tavily", "bocha")
 
     async def search(self, query: str, k: int = 4) -> list[dict]:
-        """返回 [{title, url, snippet}]。失败返回空列表，不影响辩论。"""
+        """返回 [{title, url, snippet, date}]。失败返回空列表，不影响辩论。"""
         if not self.enabled:
             return []
         headers = {"Authorization": f"Bearer {self.key}"}
@@ -31,7 +41,7 @@ class Search:
                     )
                     r.raise_for_status()
                     items = r.json().get("results") or []
-                    rows = [(i.get("title"), i.get("url"), i.get("content")) for i in items]
+                    rows = [(i.get("title"), i.get("url"), i.get("content"), i.get("published_date")) for i in items]
                 else:
                     r = await client.post(
                         "https://api.bochaai.com/v1/web-search", headers=headers,
@@ -39,11 +49,12 @@ class Search:
                     )
                     r.raise_for_status()
                     pages = ((r.json().get("data") or dict()).get("webPages") or dict()).get("value") or []
-                    rows = [(i.get("name"), i.get("url"), i.get("summary") or i.get("snippet")) for i in pages]
+                    rows = [(i.get("name"), i.get("url"), i.get("summary") or i.get("snippet"), i.get("datePublished") or i.get("dateLastCrawled"))
+                            for i in pages]
         except (httpx.HTTPError, ValueError, AttributeError) as e:
             log.warning("search failed: %s", e)
             return []
         return [
-            {"title": clip(t or "", 80), "url": u, "snippet": clip(s or "", 300)}
-            for t, u, s in rows[:k] if u
+            {"title": clip(t or "", 80), "url": u, "snippet": clip(s or "", 300), "date": _day(d)}
+            for t, u, s, d in rows[:k] if u
         ]

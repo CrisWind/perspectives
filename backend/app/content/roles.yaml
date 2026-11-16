@@ -1,0 +1,60 @@
+# 岗位对照卡（计算机专业，第一批）。由产品同学维护：改这里不用改代码。
+#
+# 规则（和思想家语料库一致）：
+# 1. checked_by 为空的卡不会被使用，也不会出现在接口里。核对人看过、确认内容属实后才填自己的名字。
+# 2. 每张卡的 sources 必须是真实可查的资料（招聘启事、官方文档、行业报告），写清标题、链接和查阅日期。
+#    没有来源的内容不要写进来，宁可留空。
+# 3. 只写"这个岗位日常做什么、入门看什么、常见往哪走、和易混淆岗位差在哪"这类相对稳定的信息。
+#    薪资、行情、岗位多少这类会变的数字不写在这里，由联网检索实时提供并标日期。
+# 4. differs 的键是另一张卡的 id，说明和它的区别。写成对比，不写成优劣。
+#
+# 字段：id, name, aliases（用户可能怎么称呼它）, scope（一句话说清它是什么）, daily（日常工作）, entry（入门要求）,
+#       path（常见发展）, differs, sources: [{title, url, date}], checked_by
+#
+# 下面是格式示例。内容是占位草稿，没有核对过，checked_by 为空，所以现在不会生效。
+- id: backend_dev
+  name: 后端开发
+  aliases: [后端, 服务端开发, Java开发, Go开发]
+  scope: 负责服务器端的业务逻辑、数据存储和接口，用户看不见，但产品的功能靠它跑起来。
+  daily: （待核对填写）
+  entry: （待核对填写）
+  path: （待核对填写）
+  differs:
+    frontend_dev: （待核对填写）
+    product_manager: （待核对填写）
+  sources: []
+  checked_by: ''
+- id: frontend_dev
+  name: 前端开发
+  aliases: [前端, Web前端]
+  scope: 负责用户能看到、能点击的界面和交互。
+  daily: （待核对填写）
+  entry: （待核对填写）
+  path: （待核对填写）
+  differs:
+    backend_dev: （待核对填写）
+  sources: []
+  checked_by: ''
+- id: product_manager
+  name: 产品经理
+  aliases: [产品岗, PM, 产品]
+  scope: 负责决定做什么、为谁做、做到什么程度，协调研发、设计和运营把它做出来。
+  daily: （待核对填写）
+  entry: （待核对填写）
+  path: （待核对填写）
+  differs:
+    operations: （待核对填写）
+    backend_dev: （待核对填写）
+  sources: []
+  checked_by: ''
+- id: operations
+  name: 运营
+  aliases: [运营岗, 用户运营, 内容运营, 活动运营]
+  scope: 负责让产品被更多人用起来、用得更久，常见分用户、内容、活动、商家等方向。
+  daily: （待核对填写）
+  entry: （待核对填写）
+  path: （待核对填写）
+  differs:
+    product_manager: （待核对填写）
+  sources: []
+  checked_by: ''

@@ -13,7 +13,12 @@ def claim_metrics(claims: list[dict], reasons: list[dict]) -> dict:
     challenges = sum(1 for c in claims if c.get("direction") == "challenge")
     later = [c for c in claims if c.get("round", 1) >= 2]
     covered = {c.get("reason_id") for c in claims if c.get("reason_id")}
+    # 事实性论点 = 引用了资料或补证据的论点；它们里有来源的比例。没有事实性论点时不给数字，避免 0/0。
+    factual = [c for c in claims if c.get("type") == "evidence" or c.get("sources")]
+    sourced = sum(1 for c in factual if c.get("sources"))
     return {
+        "factual_claims": len(factual),
+        "sourced_ratio": round(sourced / len(factual), 3) if factual else None,
         "claims": total,
         "unique_claims": unique,
         "repetition_rate": round(1 - unique / total, 3) if total else 0.0,

@@ -1,5 +1,6 @@
 # 预设难题卡（快速模式用，也是评测和提示词门槛测试的默认题）。初版，供产品同学修改。
-# category: study 升学 / job 求职 / switch 跳槽 / city 换城市 / other 其他
+# category 决定赛道：job 求职选岗 / switch 跳槽转行 / study 升学考研 属于职业选择（career）；
+#                    campus 校园生活 / relation 人际关系 / city 去向与城市 / other 其他 属于生活烦恼（life）。
 - id: grad_or_job
   title: 考研还是直接工作
   category: study
@@ -72,3 +73,39 @@
   facts:
     - 最想去的公司没有给出明确的结果时间
     - 春招的岗位通常比秋招少
+- id: roommate_conflict
+  title: 宿舍矛盾要不要摊牌
+  category: relation
+  dilemma: 我和室友因为作息和卫生问题闷了两个月，现在她晚上外放视频，我很想直接跟她说清楚，又怕把关系搞僵。
+  leaning: 倾向直接当面说清楚
+  reasons:
+    - 忍着只会越来越烦，影响我的睡眠和学习
+    - 直接说出来能让她知道我的真实感受
+    - 再拖下去，小事会变成大矛盾
+  facts:
+    - 她平时人不坏，也帮过我
+    - 宿舍还要一起住两年
+- id: change_major
+  title: 要不要转专业
+  category: campus
+  dilemma: 我大一读的专业我不太喜欢，听说另一个专业就业更好，转专业的名额只有一次机会。
+  leaning: 倾向转专业
+  reasons:
+    - 现在的专业课学得很痛苦，成绩一般
+    - 听学长说另一个专业就业前景更好
+    - 现在转成本最低，越往后越难
+  facts:
+    - 转专业要求绩点排名前 30%，我现在大概在 40%
+    - 另一个专业我只上过一门入门课
+- id: product_or_ops
+  title: 产品岗还是运营岗
+  category: job
+  dilemma: 我是计算机专业大四学生，手里有一个产品助理岗和一个用户运营岗的 offer，分不清这两个岗位到底差在哪，也不知道哪个更有成长性。
+  leaning: 倾向去产品助理
+  reasons:
+    - 产品岗更核心，能接触业务全流程
+    - 我是计算机专业，转运营有点浪费专业背景
+    - 听说产品岗以后的发展空间更大
+  facts:
+    - 产品助理的公司规模更小，运营岗在一家知名大厂
+    - 我没有做过产品或运营的实习

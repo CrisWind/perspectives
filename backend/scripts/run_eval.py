@@ -28,7 +28,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import engine, prompts, quality  # noqa: E402
+from app import engine, metrics, prompts, quality  # noqa: E402
 from app.config import BACKEND_DIR, Settings  # noqa: E402
 from app.content import select_team  # noqa: E402
 from app.engine import Services  # noqa: E402
@@ -44,6 +44,7 @@ METRICS = [
     ("unjustified_stance_changes", "无理由改变立场次数"),
     ("caved", "被用户反驳后改口附和的比例"),
     ("personas_caved", "被反驳后改口的角色数"),
+    ("sourced_ratio", "事实性论点中带来源的比例（仅多智能体方案可算）"),
 ]
 
 
@@ -199,6 +200,7 @@ async def arm_multi(svc: Services, preset_id: str, engine_on: bool, rounds: int,
     out["after_pushback"] = render_card(svc.store.get_session(sid)["card"])
     out["personas_caved"] = sum(1 for k, v in after.items() if v == "support" and before.get(k) != "support")
     out["llm"] = svc.store.llm_usage(sid)
+    out["sourced_ratio"] = metrics.claim_metrics([c for c in svc.store.claims(sid) if c["persona_id"] != "user"], s["reasons"])["sourced_ratio"]
     return out
 
 
@@ -312,6 +314,7 @@ async def run(args, arms: list[str]) -> None:
                 m = await measure(svc, o["speeches"], by_name)
                 m["unjustified_stance_changes"] = o["unjustified_stance_changes"]
                 m["personas_caved"] = o.get("personas_caved")
+                m["sourced_ratio"] = o.get("sourced_ratio")
                 m["lean_before"] = m["lean_after"] = m["caved"] = None
                 if o.get("after_pushback"):
                     m["lean_before"], m["lean_after"] = await asyncio.gather(

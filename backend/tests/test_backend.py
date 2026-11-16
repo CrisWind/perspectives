@@ -258,7 +258,7 @@ def test_health_and_content(client):
     h = client.get("/api/health").json()
     assert h["ok"] and h["mock"] is True and "llm" not in h
     assert len(client.get("/api/personas").json()["personas"]) == 16
-    assert len(client.get("/api/presets").json()["presets"]) == 6
+    assert len(client.get("/api/presets").json()["presets"]) == 9
 
 
 def test_parallel_batch_dedupes_against_each_other(tmp_path, monkeypatch):

@@ -26,10 +26,12 @@ ANGLES = [
 ]
 POSITIONS = ["oppose", "conditional", "oppose", "support", "conditional"]
 KEYWORDS = [
-    ("study", "考研|读研|保研|留学|出国|升学|读博|硕士"),
     ("switch", "辞职|跳槽|转行|离职|裸辞"),
+    ("study", "考研|读研|保研|留学|出国|升学|读博|硕士"),
+    ("campus", "社团|换专业|转专业|学生会|选课|绩点|挂科"),
+    ("relation", "室友|舍友|宿舍|闺蜜|恋爱|异地恋|吵架|矛盾|摊牌|闹僵"),
     ("city", "城市|回老家|老家|北上广|上海|北京|深圳|定居"),
-    ("job", "offer|工作|秋招|春招|大厂|创业|实习|入职"),
+    ("job", "offer|工作|秋招|春招|大厂|创业|实习|入职|岗位|产品经理|运营|后端|前端|开发"),
 ]
 
 
@@ -54,6 +56,7 @@ def _clarify(c: dict) -> dict:
         questions.append("这个决定有截止时间吗？")
     return {
         "category": _category(text),
+        "track": "career" if _category(text) in ("job", "switch", "study") else "life",
         "leaning": c.get("leaning") or "还没有明确倾向",
         "reasons": reasons,
         "questions": questions[: c.get("max_questions", 2)],
@@ -151,7 +154,19 @@ def _card(c: dict) -> dict:
         ],
         "next_steps": ["把疑问最大的那条理由写下来，找一个真正经历过的人问一次", "给自己定一个最晚做决定的日期"],
         "values": ["成长", "不落后于同龄人"],
+        "to_verify": [{"what": "这个选择里最关键的一条事实有没有依据", "how": "找一个真正经历过的人问一次，或查最近的招聘启事",
+                       "impact": "如果事实不成立，上面的建议要重新判断"}],
     }
+
+
+def _moderator(c: dict) -> dict:
+    """模拟主持人：按数字判断。有没检验过的理由就继续；最后一轮前新论点很少就收尾。"""
+    sig = c.get("signals") or dict()
+    if sig.get("untested"):
+        return {"action": "continue", "reason": "还有理由没被检验过，继续下一轮", "gap": "", "question": "", "focus": sig["untested"][0]}
+    if c.get("round", 1) >= 2 and sig.get("new_claims", 9) <= 2 and not sig.get("moving"):
+        return {"action": "wrap_up", "reason": "最近一轮几乎没有新的论点，立场也稳定了", "gap": "", "question": "", "focus": None}
+    return {"action": "continue", "reason": "还有新的分歧，继续下一轮", "gap": "", "question": "", "focus": None}
 
 
 def _judge(c: dict) -> dict:
@@ -192,6 +207,8 @@ def mock_response(purpose: str, c: dict) -> dict:
         return _speak(c)
     if purpose == "judge":
         return _judge(c)
+    if purpose == "moderator":
+        return _moderator(c)
     if purpose == "card":
         return _card(c)
     if purpose == "queries":

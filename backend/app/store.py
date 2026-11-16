@@ -12,6 +12,7 @@ from .util import now_iso
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions(
                 id TEXT PRIMARY KEY, user_id TEXT, mode TEXT, status TEXT, category TEXT,
+                track TEXT, profile TEXT,
                 dilemma TEXT, leaning TEXT, mbti TEXT, preset_id TEXT,
                 reasons TEXT, questions TEXT, facts TEXT, team TEXT, card TEXT, options TEXT,
                 created_at TEXT, updated_at TEXT);
@@ -91,6 +92,10 @@ class Store:
         cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(experiences)").fetchall()}
         if "source" not in cols:  # 旧库升级
             self._conn.execute("ALTER TABLE experiences ADD COLUMN source TEXT DEFAULT 'user'")
+        scols = {r["name"] for r in self._conn.execute("PRAGMA table_info(sessions)").fetchall()}
+        for col in ("track", "profile"):
+            if col not in scols:
+                self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
 
     def close(self) -> None:
         with self._lock:
@@ -112,11 +117,12 @@ class Store:
     def create_session(self, s: dict) -> dict:
         ts = now_iso()
         self._exec(
-            "INSERT INTO sessions(id,user_id,mode,status,category,dilemma,leaning,mbti,preset_id,"
+            "INSERT INTO sessions(id,user_id,mode,status,category,track,profile,dilemma,leaning,mbti,preset_id,"
             "reasons,questions,facts,team,card,options,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                s["id"], s.get("user_id"), s["mode"], s["status"], s.get("category"), s["dilemma"],
+                s["id"], s.get("user_id"), s["mode"], s["status"], s.get("category"), s.get("track"),
+                _dump(s.get("profile") or {}), s["dilemma"],
                 s.get("leaning", ""), s.get("mbti"), s.get("preset_id"),
                 _dump(s.get("reasons", [])), _dump(s.get("questions", [])), _dump(s.get("facts", [])),
                 _dump(s.get("team", [])), _dump(s.get("card")), _dump(s.get("options", {})), ts, ts,

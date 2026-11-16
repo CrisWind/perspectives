@@ -8,7 +8,19 @@ import yaml
 
 from .config import CONTENT_DIR
 
-CATEGORIES = {"study": "升学", "job": "求职", "switch": "跳槽", "city": "换城市", "other": "其他"}
+# 赛道：产品只做这两类。career 是主赛道（有联网检索和岗位对照卡），life 是生活烦恼（宿舍关系、换专业、去哪个城市等）。
+TRACKS = {"career": "职业选择", "life": "生活烦恼"}
+# 细分类别（category）仍保留，用于经验库分类；每个类别归属一个赛道。
+CATEGORIES = {
+    "job": "求职选岗", "switch": "跳槽转行", "study": "升学考研",
+    "campus": "校园生活", "relation": "人际关系", "city": "去向与城市", "other": "其他",
+}
+CATEGORY_TRACK = {"job": "career", "switch": "career", "study": "career",
+                  "campus": "life", "relation": "life", "city": "life", "other": "life"}
+
+
+def track_of(category: str | None) -> str:
+    return CATEGORY_TRACK.get(category or "", "life")
 MBTI_TYPES = {a + b + c + d for a in "EI" for b in "SN" for c in "TF" for d in "JP"}
 
 
@@ -25,6 +37,9 @@ class Content:
             b = (directory / f"{name}.yaml").read_bytes()
             raw += b
             data[name] = yaml.safe_load(b) or []
+        roles_path = directory / "roles.yaml"
+        if roles_path.exists():  # 岗位对照卡改了，快速模式的缓存也要失效
+            raw += roles_path.read_bytes()
         self.version = hashlib.sha1(raw).hexdigest()[:8]
         self.frameworks: dict[str, dict] = {f["id"]: f for f in data["frameworks"]}
         self.personas: dict[str, dict] = {}
@@ -36,7 +51,25 @@ class Content:
             p.setdefault("rank", 50)
             self.personas[p["id"]] = p
         self.presets: dict[str, dict] = {p["id"]: p for p in data["presets"]}
+        for p in self.presets.values():
+            p["track"] = track_of(p.get("category"))
         self.sages = self._load_sages(directory, self.frameworks)
+        self.roles = self._load_roles(directory)
+
+    @staticmethod
+    def _load_roles(directory: Path) -> dict[str, dict]:
+        """岗位对照卡。和思想家语料一样，没有人核对过（checked_by 为空）的卡不会被使用，也不会出现在接口里。"""
+        path = directory / "roles.yaml"
+        raw = (yaml.safe_load(path.read_bytes()) or []) if path.exists() else []
+        out: dict[str, dict] = {}
+        for r in raw:
+            if not str(r.get("checked_by") or "").strip():
+                continue
+            r.setdefault("aliases", [])
+            r.setdefault("differs", dict())
+            r.setdefault("sources", [])
+            out[r["id"]] = r
+        return out
 
     @staticmethod
     def _load_sages(directory: Path, frameworks: dict) -> dict[str, dict]:
@@ -70,6 +103,41 @@ class Content:
         if provider:
             out["provider"] = provider
         return out
+
+
+def pick_roles(content: "Content", text: str, k: int = 4) -> list[dict]:
+    """按用户的话挑出提到的岗位对照卡；只提到一个岗位时，补上和它容易混淆的岗位，方便对比。"""
+    hits: list[tuple[int, dict]] = []
+    for r in content.roles.values():
+        pos = [text.find(n) for n in [r["name"], *r["aliases"]] if n and n in text]
+        if pos:
+            hits.append((min(pos), r))
+    picked = [r for _, r in sorted(hits, key=lambda x: x[0])]
+    for r in list(picked):
+        for other in r["differs"]:
+            if len(picked) >= k:
+                break
+            if other in content.roles and content.roles[other] not in picked:
+                picked.append(content.roles[other])
+    return picked[:k]
+
+
+def role_block(roles: list[dict]) -> str:
+    """放进提示词的岗位对照卡文字。"""
+    nl = chr(10)
+    rows = []
+    for r in roles:
+        src = "；".join(f"{x.get('title', '')}（{x.get('date', '日期不详')}）" for x in r["sources"]) or "无"
+        diff = "；".join(f"和「{other}」的区别：{t}" for other, t in r["differs"].items())
+        rows.append(nl.join([
+            f"- 【{r['name']}】{r.get('scope', '')}",
+            f"  日常工作：{r.get('daily', '')}",
+            f"  入门要求：{r.get('entry', '')}",
+            f"  常见发展：{r.get('path', '')}",
+            f"  {diff}" if diff else "  （没有对比说明）",
+            f"  来源：{src}",
+        ]))
+    return nl.join(rows)
 
 
 def pick_quotes(sage: dict, text: str, k: int = 3) -> list[dict]:
