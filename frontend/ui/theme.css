@@ -1,0 +1,2 @@
+/* Shared visual foundations for the home, selection and meeting pages. */
+:root{--bg:#f7f8fa;--surface:#fffefa;--line:#dce1df;--ink:#303a37;--muted:#626f69;--accent:#516b60;--deep:#f9fbf8;--warm:#85735d;--shadow:0 7px 26px #424f4509,0 2px 5px #424f4505;font-family:Inter,'Alibaba PuHuiTi','Microsoft YaHei','PingFang SC',sans-serif;color-scheme:light}

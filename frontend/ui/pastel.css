@@ -1,0 +1,46 @@
+/* V1.4 review: matte pastel surfaces, restrained depth and readable role details. */
+@import url("theme.css");
+body{isolation:isolate;background:var(--bg)}
+body:before{content:'';position:fixed;inset:0;z-index:1000;pointer-events:none;opacity:.022;background:url('assets/matte-noise.svg') repeat}
+h1,h2,h3,.serif{font-family:Inter,'Alibaba PuHuiTi','Microsoft YaHei','PingFang SC',sans-serif;font-weight:750;letter-spacing:-.025em}
+h1{font-size:52px;line-height:1.4}h2{font-size:30px;line-height:1.55}
+.brand{color:#3c5147}.brand svg circle{stroke:#667e70}.nav{border-color:#dce1df}.nav-links{color:var(--muted)}
+.eyebrow{font-weight:700;letter-spacing:1.8px}.hero h1 em{color:#657e6d}.hero{gap:38px}.hero h1{margin:20px 0}
+.hero-art .orbit{border-color:#cad7cf90}.hero-art .orbit:after{border-color:#cad7cf70}.hero-figure img{filter:drop-shadow(0 10px 12px #4a5b4510)}
+.button,.round,.chip,.text-button,.nav-sample{transition:background .18s ease,box-shadow .18s ease,transform .18s ease,color .18s ease}
+.button{border-radius:18px;background:#fffefb;box-shadow:0 3px 12px #424f4505;font-weight:650;min-height:44px;gap:16px}
+.button.primary{color:#fcfdfb;background:var(--accent);border-color:var(--accent);box-shadow:0 5px 16px #516b6017}
+.button:hover:not(:disabled),.round:hover,.chip:hover{transform:translateY(-2px);box-shadow:0 6px 18px #424f4510}
+.button.primary:hover:not(:disabled){background:#435e52}.button:active:not(:disabled),.round:active{transform:translateY(0)}
+.button.small{border-radius:16px}.round{background:#fffefb;color:var(--ink);border-color:var(--line);box-shadow:0 3px 12px #424f4505;width:44px;height:44px}
+.steps{padding:20px 0;gap:16px;border:0}.step{border:1px solid #e3e6e1;border-radius:20px;padding:22px 18px;background:#f0f2ed;box-shadow:var(--shadow);gap:14px}
+.step:nth-child(2){background:#f2eff4}.step:nth-child(3){background:#f5f0e9}.step h3{font-weight:750}.step-num{color:#788173;font-size:25px}
+.section{padding:62px 0}.section-top h2{font-size:30px}.ellipse-track{border-color:#b8c6b788}.ellipse-track:after{border-color:#c2cbc255}
+.orbit-personality,.stack-card.personality-sheet{box-shadow:0 8px 24px #424f4510,0 2px 6px #424f4507;border-radius:20px}
+.orbit-toolbar{gap:12px}.orbit-toolbar p{margin:0}.orbit-feature{display:flex;align-items:center;justify-content:center;gap:20px;min-height:56px;margin-bottom:8px}
+.role-identity{display:flex;align-items:baseline;gap:10px}.role-identity strong{font-family:Inter,'Arial',sans-serif;font-size:27px;font-weight:850;letter-spacing:-.03em;color:var(--ink)}.role-identity span{font-size:16px;font-weight:650}
+.role-info-button{border:1px solid #d5ddd7;border-radius:16px;background:#fffefb;color:#50675a;min-height:44px;padding:10px 14px;font-size:12px;font-weight:650;cursor:pointer}
+.role-info-button[aria-expanded=true]{background:#e9eee6;border-color:#a9baaa}.role-info-button:hover{background:#eef2eb}
+.form-panel,.player,.guest{background:#fffefa;border:1px solid #e0e4df;border-radius:24px;box-shadow:var(--shadow)}
+.form-panel{padding:26px}.panel-heading h2{font-weight:750}.panel-heading .number{font-family:Inter,Arial,sans-serif;font-weight:750}
+textarea{background:#f5f6f2;border-color:#d9dfd7;color:var(--ink);border-radius:16px;transition:border-color .18s ease,box-shadow .18s ease}
+textarea:focus{border-color:#7d9483;box-shadow:0 0 0 3px #7d948318;outline:0}.field label{font-weight:650}.field label small{font-weight:400}.help{line-height:1.7}
+.chip{background:#f8f9f6;border-color:#dce1d9;color:#5e6b62;border-radius:16px;min-height:40px}.chip.active{background:#e5ecdf;border-color:#a7b69d;color:#40583e}
+.selection-top{flex-wrap:wrap;gap:12px}.choose-role-summary{display:flex;align-items:center;justify-content:center;gap:22px;margin:22px 0 8px}.choose-role-summary .role-identity strong{font-size:29px}
+.selected-mark{background:#e5eddd!important;color:#3f5839!important;border-color:#b5c4a7!important;box-shadow:0 3px 10px #5066460b!important;border-radius:12px!important;padding:7px 12px!important;font-weight:700}
+.card-detail{padding-top:10px}.card-detail blockquote{font-family:inherit;font-size:15px;color:#5f6c62}.card-detail .button{min-height:44px;border-color:#b5c3af;background:#edf1e7;color:#415b3c;border-radius:16px}
+.roster{border-color:#dce1d9}.seat{background:#fffefa;border-color:#dce1d9;border-radius:16px;box-shadow:0 3px 12px #424f4505;padding:8px}.seat small{font-family:Inter,Arial,sans-serif;font-size:10px;font-weight:800;color:#59665d}.seat button{min-width:32px;min-height:36px;color:#687669}
+.sage-banner,.sage-option{background:#f0ece3;border-color:#e0d8c7;border-radius:24px;box-shadow:var(--shadow)}.sage-banner h3{font-family:inherit;font-size:25px;font-weight:750}.sage-banner .eyebrow{color:#847052!important}.sage-people{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}.sage-person{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid #d4c7b0;border-radius:999px;background:#fffaf0a8;color:#73634c;font-size:11px;font-weight:700}.sage-link{align-self:center;text-decoration:none;transition:background .18s ease,transform .18s ease}.sage-link:hover{background:#fffaf0;transform:translateY(-2px)}
+.book{background:#b7a485;border-color:#d1c1a4;box-shadow:5px 5px 0 #9c8e7114}.book span{color:#fff8e9;border-color:#e6d8bc}.sage-glyph{color:#8b7654;border-color:#cdbf9f;border-radius:12px}.sage-copy strong{font-weight:750}
+.switch{background:#d3d8cf}.switch:before{background:#fffefa}.switch:checked{background:#667f61}.switch:checked:before{background:#fffefa}
+.badge{border-color:#c9cfc3;border-radius:12px;color:#616d5d;background:#ffffff36}.start-bar{border-color:#dce1d9}.start-bar strong{font-weight:750}
+.player-title{font-weight:700}.speaker b{font-weight:800;font-family:Inter,'Microsoft YaHei',sans-serif}.speaker small{color:#776289}.player-controls{border-color:#dce1d9}.player blockquote{color:#404e43}.track{background:#dce1d9}
+#personality-dialog,#sample-dialog{background:#fbfcf8;border-color:#dce1d9;box-shadow:0 20px 70px #4551461c;border-radius:24px}
+#personality-dialog::backdrop,#sample-dialog::backdrop{background:#46564b70;backdrop-filter:blur(5px)}
+#personality-dialog{width:min(600px,calc(100vw - 24px));padding:20px}#personality-title{font-size:24px;font-weight:850;font-family:Inter,'Microsoft YaHei',sans-serif}
+#personality-image{max-height:calc(100dvh - 260px);border-radius:18px;box-shadow:var(--shadow)}
+.sample-dialog-head{border-color:#dce1d9}.sample-dialog-head h2{font-family:inherit;font-weight:750}#sample-frame{background:#f7f8fa}
+.toast{background:#e7eddf;color:#344e33;border:1px solid #c8d5bf;box-shadow:var(--shadow);border-radius:18px}
+@media(max-width:1050px){.hero h1{font-size:43px}.hero{gap:24px}.step{padding:18px 14px;gap:10px}}
+@media(max-width:900px){.hero h1{font-size:37px}.hero{gap:8px}.hero-actions{gap:14px}.steps{gap:12px;padding:18px 0}.step{padding:18px}.section-top h2{font-size:25px}.section{padding:36px 0}.form-panel{padding:21px}.choose-intro h1{font-size:28px}.choose-role-summary{margin-top:20px;gap:18px}.role-identity strong{font-size:25px}.role-info-button{font-size:11px;padding:10px 12px}.sage-banner h3{font-size:21px}.stack-card.personality-sheet{border-radius:18px}.sample-subpage h2{font-size:26px}.orbit-feature{gap:16px}.hero-art .orbit{max-width:100%;max-height:100%}}
+#personality-image{max-height:calc(100dvh - 140px)}

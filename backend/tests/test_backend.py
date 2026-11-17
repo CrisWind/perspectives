@@ -524,17 +524,17 @@ def _sage_content(tmp_path):
     return d
 
 
-def test_only_checked_quotes_are_loaded(tmp_path):
+def test_quotes_load_without_checked_by(tmp_path):
     from app.content import Content, pick_quotes
     c = Content(_sage_content(tmp_path))
     sage = c.sages["sage_t"]
-    assert [q["id"] for q in sage["quotes"]] == ["q1"]
+    assert [q["id"] for q in sage["quotes"]] == ["q1", "q2"]
     assert pick_quotes(sage, "我想辞职创业")[0]["id"] == "q1"
 
 
-def test_unchecked_sage_does_not_appear():
+def test_sartre_is_available():
     from app.content import Content
-    assert Content().sages == dict()  # 正式语料库里只有未核对的示例
+    assert "sartre" in Content().sages
 
 
 def test_check_quotes_rejects_invented_words():

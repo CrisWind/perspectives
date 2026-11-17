@@ -1,0 +1,93 @@
+/* Shared pastel meeting surfaces; preserve the wooden room and character animation. */
+body.discussion-mode header{flex-wrap:wrap;gap:10px}
+.meeting-back,.meeting-edit{font-size:13px;color:#f4e7d5;text-decoration:underline;text-underline-offset:4px}
+.meeting-status{margin:0;padding:8px 24px;color:#e8d9c5;font-size:13px;text-align:center}
+.meeting-status:empty{display:none}
+.meeting-retry{display:block;margin:8px auto;padding:10px 20px;border-radius:16px}
+.meeting-participants{font-size:12px;line-height:1.8;color:#e8d9c5}
+#dilemma-form .actions[hidden]{display:none!important}
+#dilemma-form textarea[readonly],#dilemma-form input[readonly]{cursor:text}
+@media(max-width:760px){.meeting-back{font-size:12px}.meeting-status{padding:8px 12px}body.discussion-mode header{height:auto;min-height:64px}}
+
+:root{background:var(--bg);color:var(--ink)}
+body,body.discussion-mode{isolation:isolate;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:Inter,'Alibaba PuHuiTi','Microsoft YaHei','PingFang SC',sans-serif}
+body::before{content:'';position:fixed;inset:0;z-index:1100;pointer-events:none;opacity:.022;background:url('assets/matte-noise.svg') repeat}
+body.discussion-mode header,body.discussion-mode main,.meeting-heading,.meeting-status{width:min(1440px,calc(100% - 64px));margin-inline:auto}
+body.discussion-mode header{min-height:88px;height:auto;gap:24px;border-bottom:1px solid var(--line);padding:18px 0}
+.meeting-header .brand{display:flex;align-items:center;gap:10px;font:25px Georgia,serif;letter-spacing:-.5px;color:#3c5147;text-decoration:none;margin-right:auto;max-width:none}
+.meeting-header .brand svg{width:30px;height:30px;flex:none;stroke:#667e70}
+body #connection{font-size:12px;font-weight:500;color:var(--muted);background:#eef2eb;border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:none}
+.meeting-back,.meeting-edit{font-size:13px;color:var(--accent);text-decoration:none;line-height:1.8}
+.meeting-back{padding:10px 16px;min-height:44px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.meeting-back:hover,.meeting-edit:hover{color:#304c3e;background:#eef2eb}
+.meeting-heading{padding:28px 0 22px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.meeting-heading h1{font-size:28px;line-height:1.5;letter-spacing:-.025em;font-weight:750;margin:6px 0 0}
+.meeting-eyebrow{font-size:10px;letter-spacing:1.8px;color:var(--muted);font-weight:650}
+.meeting-phase{font-size:12px;color:#50664f;background:#e9eee4;border:1px solid #d8e0d1;border-radius:12px;padding:8px 12px}
+.meeting-status{color:var(--muted);font-size:13px;padding:0 0 18px;line-height:1.8;text-align:left;overflow-wrap:anywhere}
+.meeting-retry{border:1px solid var(--line);background:var(--accent);color:var(--surface);min-height:44px}
+body.discussion-mode main{width:min(1240px,calc(100% - 64px));grid-template-columns:184px minmax(0,1fr);gap:20px;padding-bottom:36px}
+body.discussion-mode .arena{padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow)}
+body.discussion-mode .arena::after,body.discussion-mode .cast::before{display:none}
+body.discussion-mode .theater{border:1px solid #dfd6ca;border-radius:18px;box-shadow:none}
+body.discussion-mode .sidebar-nav{top:18px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:20px;padding:12px 8px;box-shadow:var(--shadow);gap:6px}
+body.discussion-mode .sidebar-nav-title{padding:6px 10px 12px;font-size:11px;color:var(--muted);font-weight:650;letter-spacing:.08em}
+body.discussion-mode .sidebar-nav button{grid-template-columns:22px minmax(0,1fr) auto;font-size:13px;font-weight:650;min-height:48px;gap:6px;padding:10px 8px;border-radius:14px;transition:background .18s ease}
+body.discussion-mode .sidebar-nav button:hover,body.discussion-mode .sidebar-nav button[aria-expanded=true]{color:#40583e;background:#edf1e7;border-color:#cbd7c4}
+.nav-index{color:#7a877d;font-size:10px}.nav-arrow{color:var(--accent);font-size:19px}
+.sidebar-scrim{background:#46564b70;backdrop-filter:blur(5px)}
+body.card-open .sidebar-nav{z-index:901}
+body.discussion-mode .roundtable-sidebar .panel{background:var(--surface);color:var(--ink);border-color:var(--line);border-radius:24px;box-shadow:0 20px 70px #45514626;padding:28px;scrollbar-width:thin;scrollbar-color:#c3cdc2 transparent;scroll-padding:20px;overflow-wrap:anywhere}
+body.discussion-mode .roundtable-sidebar .panel h2{color:var(--ink);font-size:23px;font-weight:750;letter-spacing:-.025em;padding-right:44px;margin-bottom:20px}
+body.discussion-mode .roundtable-sidebar .panel .section-title{align-items:start;gap:10px;padding-right:40px;flex-wrap:wrap}
+body.discussion-mode .roundtable-sidebar .panel .section-title h2{padding:0;margin:0}
+body.discussion-mode .panel-close{width:40px;height:40px;top:18px;right:18px;border:1px solid var(--line);border-radius:14px;background:#f5f6f2;color:var(--muted)}
+body.discussion-mode .panel-close:hover{background:#e9eee4;color:var(--ink)}
+body.discussion-mode :is(button,a,input,textarea,select):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+body.discussion-mode :is(textarea,input,select){color:var(--ink);background:#f5f6f2;border:1px solid #d9dfd7;border-radius:16px;padding:12px 14px;line-height:1.8;box-shadow:none}
+body.discussion-mode textarea:focus,body.discussion-mode input:focus{border-color:#7d9483;box-shadow:0 0 0 3px #7d948318}
+#dilemma-form label{font-size:12px;color:var(--muted);font-weight:650;margin:18px 0 8px}
+#dilemma-form textarea{resize:vertical;min-height:90px}
+.meeting-edit{display:inline-block;margin-top:18px;text-decoration:underline;text-underline-offset:4px}
+.meeting-participants{font-size:12px;line-height:1.9;color:var(--muted);padding:14px 0 0;margin:18px 0 0;border-top:1px solid var(--line)}
+#notice{color:var(--muted)}
+body #phase{font-size:11px;font-weight:500;background:#e9eee4;color:#50664f;border-radius:10px;padding:6px 10px;line-height:1.6}
+body.discussion-mode .speech{background:#f5f6f2;color:var(--ink);border:1px solid #e2e6df;border-left:3px solid var(--accent);border-radius:16px;padding:16px;margin-bottom:12px}
+.speech strong{font-weight:750}.speech small{color:var(--muted)}.speech p{font-size:14px;line-height:1.9}
+body.discussion-mode .feed>p{color:var(--muted);line-height:1.8}
+body.discussion-mode :is(.trace,#card button,.filters button,.speech button){display:inline-block;background:#fffefa;border:1px solid var(--line);color:#51675a;border-radius:12px;padding:7px 10px;margin:4px 5px 0 0;font-size:11px;line-height:1.6;text-decoration:none}
+body.discussion-mode :is(.trace[aria-pressed=true],.filters button[aria-pressed=true]){background:#e5ecdf;color:#40583e;border-color:#a7b69d}
+body.discussion-mode .filters{gap:2px;margin-bottom:16px}
+#card>section{padding:18px;border:1px solid #e1e5dc;border-radius:18px;background:#f5f6f0;margin-top:12px}
+#card>section:nth-child(2){background:#f3eff4}#card>section:nth-child(3){background:#f5f0e9}
+#card h3{font-size:15px;font-weight:750;margin:0 0 10px}#card p{font-size:14px;line-height:1.9;margin:6px 0;color:var(--ink)}
+body.discussion-mode .stage-caption{width:100%;min-height:94px;margin:12px 0 0;padding:18px;border-radius:18px;background:#f5f6f2;border:1px solid #e1e5dc;box-shadow:none;color:var(--ink);text-align:left;gap:14px}
+body.discussion-mode .stage-caption strong{background:#e5ecdf;color:#40583e;padding:7px 10px;border-radius:12px;font-size:12px;line-height:1.5;font-weight:650}
+body.discussion-mode .stage-caption p{color:var(--ink);font-size:14px;line-height:1.8;max-height:6em;margin:3px 0 0;text-align:left}
+body.discussion-mode .stage-caption[data-state=idle] p,body.discussion-mode .stage-caption[data-state=waiting] p{color:var(--muted)}
+body.discussion-mode .stage-actions{width:100%;margin:12px 0 0;gap:10px;flex-wrap:wrap}
+body.discussion-mode .stage-actions button,body.discussion-mode .table-controls #interject button[type=submit]{position:static;width:auto;height:auto;min-height:44px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--accent);padding:11px 18px;font-size:13px;font-weight:650;box-shadow:none;transition:background .18s ease,transform .18s ease}
+body.discussion-mode .stage-actions button:first-child,body.discussion-mode .stage-actions button:nth-child(2),body.discussion-mode .table-controls #interject button[type=submit]{color:#fcfdfb;background:var(--accent);border-color:var(--accent)}
+body.discussion-mode .stage-actions button:not(:disabled):hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+body.discussion-mode .stage-actions button:disabled{cursor:default;opacity:.45}
+body.discussion-mode .paper-action{margin-left:auto}.paper-action span{background:none;padding:0;box-shadow:none}
+body.discussion-mode .table-controls{width:100%;margin:12px 0 0}
+body.discussion-mode .table-controls:has(#interject[hidden]){display:none}
+body.discussion-mode .table-controls #interject{background:#f5f6f2;border:1px solid var(--line);border-radius:18px;padding:16px;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+body.discussion-mode .table-controls #reply{background:var(--surface);border-color:#d9dfd7;min-width:0}
+body.discussion-mode .table-controls #interject>label{color:var(--muted);font-weight:650}
+.target{font-size:12px;line-height:1.8}.target button{color:var(--accent)}
+body.discussion-mode .flash{outline-color:var(--accent)}
+@media(max-width:900px){body.discussion-mode header,body.discussion-mode main,.meeting-heading,.meeting-status{width:calc(100% - 44px)}body.discussion-mode header{min-height:72px;gap:12px}.meeting-header .brand{font-size:22px}.meeting-back{font-size:12px;padding:9px 12px}.meeting-heading{padding:24px 0 18px}.meeting-heading h1{font-size:25px}body.discussion-mode main{grid-template-columns:166px minmax(0,1fr);gap:14px}body.discussion-mode .arena{padding:10px}}
+@media(max-width:760px){body.discussion-mode header{padding:15px 0;gap:12px}.meeting-header .brand{flex:1}.meeting-header #connection{order:3;width:100%;font-size:11px;padding:6px 10px}.meeting-heading{gap:10px}.meeting-heading h1{font-size:23px}.meeting-eyebrow{font-size:9px}.meeting-phase{font-size:10px;padding:7px 9px;max-width:45%}.meeting-status{font-size:12px}body.discussion-mode main{grid-template-columns:minmax(0,1fr);gap:14px}body.discussion-mode .roundtable-sidebar{position:sticky;top:0;z-index:20}body.discussion-mode .sidebar-nav{position:relative;top:0;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:18px;padding:7px;gap:4px}body.discussion-mode .sidebar-nav-title{display:none}body.discussion-mode .sidebar-nav button{grid-template-columns:1fr;justify-items:center;font-size:11px;gap:4px;padding:8px 3px;min-height:53px}.nav-index{font-size:9px}.nav-arrow{display:none}body.discussion-mode .arena{border-radius:20px;padding:8px}body.discussion-mode .theater{border-radius:14px}body.discussion-mode .stage-caption{grid-template-columns:minmax(0,1fr);gap:8px;padding:14px;margin-top:10px}body.discussion-mode .stage-caption strong{justify-self:start;font-size:11px}body.discussion-mode .stage-caption p{font-size:13px;max-height:8em}body.discussion-mode .stage-actions{gap:8px}body.discussion-mode .stage-actions button{padding:10px 13px;font-size:12px}body.discussion-mode .roundtable-sidebar .panel{padding:22px 18px;border-radius:22px;max-height:calc(100dvh - 32px)}body.discussion-mode .roundtable-sidebar .panel h2{font-size:21px}body.discussion-mode .roundtable-sidebar .panel .section-title{flex-direction:column}body.discussion-mode .table-controls #interject{grid-template-columns:minmax(0,1fr);padding:12px}body.discussion-mode .table-controls #interject button[type=submit]{width:100%}body.card-open .roundtable-sidebar{z-index:auto}}
+/* Start at the table's front edge, covering its lower empty space. Keep the
+   artwork's proportions while allowing readable controls to grow below it. */
+.meeting-scene{display:grid;isolation:isolate;min-width:0;overflow:hidden;border:1px solid #dfd6ca;border-radius:18px;background:#f5f3ed}
+body.discussion-mode .meeting-scene>.theater{grid-area:1/1;align-self:start;width:100%;border:0;border-radius:0;overflow:hidden}
+.meeting-console{grid-area:1/1;align-self:start;min-width:0;z-index:10;margin-top:50%;padding:12px;background:#fffefaed;backdrop-filter:blur(8px);border-top:1px solid #ffffffa6}
+body.discussion-mode .meeting-console .stage-caption{margin:0;min-height:64px;padding:12px 16px;background:#f0f2ebd9;grid-template-columns:auto minmax(0,1fr);gap:12px}
+body.discussion-mode .meeting-console .stage-caption p{margin:0;max-height:5.4em;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+body.discussion-mode .meeting-console .stage-actions{margin-top:10px}
+body.discussion-mode .meeting-console .table-controls{margin-top:10px}
+@media(max-width:760px){.meeting-scene{border-radius:14px}.meeting-console{padding:9px}body.discussion-mode .meeting-console .stage-caption{padding:10px;gap:8px;min-height:0}body.discussion-mode .meeting-console .stage-caption strong{font-size:10px;padding:5px 7px}body.discussion-mode .meeting-console .stage-caption p{font-size:12px;line-height:1.8}body.discussion-mode .meeting-console .stage-actions{margin-top:8px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

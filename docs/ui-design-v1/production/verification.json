@@ -1,0 +1,78 @@
+{
+  "checks": [
+    {
+      "route": "/",
+      "width": 1440,
+      "passed": true
+    },
+    {
+      "route": "/choose/",
+      "width": 1440,
+      "passed": true
+    },
+    {
+      "route": "/roundtable/",
+      "width": 1440,
+      "passed": true
+    },
+    {
+      "route": "/",
+      "width": 768,
+      "passed": true
+    },
+    {
+      "route": "/choose/",
+      "width": 768,
+      "passed": true
+    },
+    {
+      "route": "/roundtable/",
+      "width": 768,
+      "passed": true
+    },
+    {
+      "route": "/",
+      "width": 390,
+      "passed": true
+    },
+    {
+      "route": "/choose/",
+      "width": 390,
+      "passed": true
+    },
+    {
+      "route": "/roundtable/",
+      "width": 390,
+      "passed": true
+    },
+    {
+      "route": "/",
+      "width": 360,
+      "passed": true
+    },
+    {
+      "route": "/choose/",
+      "width": 360,
+      "passed": true
+    },
+    {
+      "route": "/roundtable/",
+      "width": 360,
+      "passed": true
+    }
+  ],
+  "interactions": [
+    "image-only enlargement and keyboard dismissal",
+    "hero no-overlap at nine animation phases",
+    "sample seek/play/reset/close",
+    "card stack wraparound",
+    "2–4 guest validation",
+    "draft refresh and navigation",
+    "live API team selection and meeting restore",
+    "persistent sidebar and centered panels",
+    "history back/forward",
+    "reduced motion"
+  ],
+  "errors": [],
+  "sessionId": "s_1ada152ae9d24527ac9e"
+}

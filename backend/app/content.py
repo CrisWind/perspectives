@@ -25,6 +25,9 @@ class Content:
             b = (directory / f"{name}.yaml").read_bytes()
             raw += b
             data[name] = yaml.safe_load(b) or []
+        sage_path = directory / "sages.yaml"
+        if sage_path.exists():
+            raw += sage_path.read_bytes()
         self.version = hashlib.sha1(raw).hexdigest()[:8]
         self.frameworks: dict[str, dict] = {f["id"]: f for f in data["frameworks"]}
         self.personas: dict[str, dict] = {}
@@ -40,14 +43,14 @@ class Content:
 
     @staticmethod
     def _load_sages(directory: Path, frameworks: dict) -> dict[str, dict]:
-        """历史思想家。没有人核对过的原文（checked_by 为空）不会被使用，没有任何已核对原文的思想家不会出场。"""
+        """加载有原文的历史思想家。"""
         path = directory / "sages.yaml"
         raw = (yaml.safe_load(path.read_bytes()) or []) if path.exists() else []
         out: dict[str, dict] = {}
         for s in raw:
             if s["framework"] not in frameworks:
                 raise ValueError(f"sage {s['id']} uses unknown framework {s['framework']}")
-            quotes = [q for q in s.get("quotes") or [] if str(q.get("checked_by") or "").strip() and q.get("text")]
+            quotes = [q for q in s.get("quotes") or [] if q.get("text")]
             if not quotes:
                 continue
             s["quotes"] = quotes

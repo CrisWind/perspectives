@@ -1,0 +1,12 @@
+{
+  "name": "perspectives-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development checks for the static Perspectives frontend",
+  "scripts": {
+    "test:ui": "node verify-ui.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

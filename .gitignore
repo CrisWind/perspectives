@@ -2,7 +2,8 @@
 *.env.local
 __pycache__/
 *.pyc
-.venv/
+.venv*/
+*.egg-info/
 .pytest_cache/
 *.db
 *.db-wal
@@ -15,3 +16,15 @@ dist/
 .vscode/
 .idea/
 .scratch/
+# Local asset-authoring tool, not an application dependency.
+/blender-mcp/
+.env.*
+!.env.example
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.log
+coverage/
+playwright-report/
+test-results/
