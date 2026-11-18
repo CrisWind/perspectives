@@ -660,9 +660,7 @@ function hideDecisionBar() {
 }
 
 function maybeOpenIntermission() {
-  if (!pendingIntermission) return;
-  if (stageQueue.length > 0) return;
-  if (!intermission.hidden) return;
+  if (!pendingIntermission || !intermission.hidden) return;
   openIntermission(currentRound);
 }
 
