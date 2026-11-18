@@ -171,6 +171,19 @@ def persona_user(
     return "\n\n".join(parts)
 
 
+def themes(pool: list[dict], names: dict[str, str], dilemma: str, leaning: str) -> tuple[str, str]:
+    system = """你是辩论记录员，把当前论点池整理成 2~5 个「交锋主题」。
+每个主题是这位用户这次选择里真正冲突的一个焦点，可以跨越多条理由、多个人物。
+要求：
+1. title：6~14 个字，说清这个交锋焦点是什么（例如「收入与成长哪个优先」「父母的期待是不是我的」）。
+2. claim_ids：属于这个主题的论点编号，必须来自论点池，每个主题至少 1 条。
+3. 主题之间不要重复，优先覆盖池子里最重要的论点；无关紧要的论点可以不放。
+只输出 JSON：{"themes": [{"title": "...", "claim_ids": ["c1", "c3"]}]}"""
+    user = f"【用户难题】{dilemma}\n【用户目前倾向】{leaning or '没有明确倾向'}\n【论点池】\n" + "\n".join(
+        f"- {c['id']}（{names.get(c['persona_id'], c['persona_id'])}）：{c['text']}" for c in pool)
+    return system, user
+
+
 def judge(p: dict, fw: dict, speech: str, claims: list[dict], pool: list[dict], position: str) -> tuple[str, str]:
     system = """你是辩论质量检查员，做三件事，标准要严格但不要吹毛求疵。
 1. 去重：判断每条"新论点"是不是和"论点池"里某条论点表达同一个意思。重复就给出池中那条的编号，否则给 null。

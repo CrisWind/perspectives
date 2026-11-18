@@ -387,10 +387,12 @@ class Debate:
         self._load_experiences()
         await self._search()
         await self._round_independent()
+        await self._update_themes()
         for _ in range(self.rounds - 1):
             if not await self._maybe_break():
                 break
             await self._round_cross()
+            await self._update_themes()
         else:
             await self._challenge_floor()
         await self._card("card.ready")
@@ -402,6 +404,32 @@ class Debate:
         if not self.interactive:
             return True
         return await self.svc.round_break(self.sid)
+
+    async def _update_themes(self) -> None:
+        """把当前论点池整理成交锋主题，供前端渲染思维导图；失败不阻塞辩论。"""
+        if not self.engine_on:
+            return
+        pool = self.persona_claims()
+        if not pool:
+            return
+        system, user = prompts.themes(pool, self.names, self.s["dilemma"], self.s.get("leaning") or "")
+        try:
+            out, _ = await self.svc.llm.json(
+                "themes", system, user, provider=self.svc.llm.judge, session_id=self.sid,
+                temperature=0.2, max_tokens=700, mock={"pool": pool, "reasons": self.s["reasons"]},
+            )
+        except LLMError:
+            return
+        ids = {c["id"] for c in pool}
+        themes = []
+        for t in out.get("themes") or []:
+            if not isinstance(t, dict) or not t.get("title"):
+                continue
+            cids = [c for c in (t.get("claim_ids") or []) if isinstance(c, str) and c in ids]
+            if cids:
+                themes.append({"title": clip(str(t["title"]), 20), "claim_ids": cids})
+        if themes:
+            self.emit("themes.updated", {"themes": themes[:5]})
 
     async def _after(self) -> None:
         s = self.svc.store.get_session(self.sid)

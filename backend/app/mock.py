@@ -128,6 +128,19 @@ def _speak(c: dict) -> dict:
     }
 
 
+def _themes(c: dict) -> dict:
+    pool = [x for x in c.get("pool") or [] if x.get("persona_id") != "user"]
+    reasons = {r["id"]: r["text"] for r in c.get("reasons") or []}
+    groups: dict[str, list[str]] = {}
+    for x in pool:
+        key = x.get("reason_id") or "other"
+        groups.setdefault(key, []).append(x["id"])
+    themes = []
+    for k, ids in groups.items():
+        themes.append({"title": clip(reasons.get(k, "其他交锋点"), 14), "claim_ids": ids})
+    return {"themes": themes[:5]}
+
+
 def _card(c: dict) -> dict:
     pool = [x for x in c.get("pool") or [] if x["persona_id"] != "user"]
     reasons = c["reasons"]
@@ -194,6 +207,8 @@ def mock_response(purpose: str, c: dict) -> dict:
         return _judge(c)
     if purpose == "card":
         return _card(c)
+    if purpose == "themes":
+        return _themes(c)
     if purpose == "queries":
         return {"queries": [clip(c.get("dilemma", ""), 30)]}
     if purpose == "generalize":

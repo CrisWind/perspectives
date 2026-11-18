@@ -133,3 +133,13 @@ body.discussion-mode .meeting-console .stage-caption .speech-body{max-height:5.4
 .intermission-actions button{min-height:44px;border:1px solid var(--line);border-radius:14px;padding:11px 18px;font-size:14px;font-weight:650;background:var(--surface);color:var(--accent)}
 .intermission-actions .intermission-cont{background:var(--accent);color:#fcfdfb;border-color:var(--accent)}
 @media(max-width:760px){.intermission-cols{grid-template-columns:minmax(0,1fr)}.intermission-body{padding:20px}}
+.mindmap{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;padding:12px;border:1px solid var(--line);border-radius:16px;background:#f5f6f2}
+.mindmap[hidden]{display:none}
+.mindmap-root,.mindmap-node{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;text-align:left;border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--ink);font-size:13px;background:#fffefa}
+.mindmap-root{background:#eef2eb}
+.mindmap-root strong{font-size:10px;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.mindmap-root-text{font-size:13px;font-weight:650;line-height:1.5}
+.mindmap-node{border-left:4px solid var(--accent)}
+.mindmap-node.active{border-color:var(--accent);background:#eef2eb}
+.mindmap-title{font-weight:750;font-size:14px;line-height:1.4}
+.mindmap-meta{font-size:11px;color:var(--muted)}
