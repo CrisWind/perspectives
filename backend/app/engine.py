@@ -38,6 +38,8 @@ class Services:
         self.tasks: dict[str, asyncio.Task] = dict()
         self.pending: dict[str, list[dict]] = dict()  # 辩论进行中用户的插话，等下一轮处理
         self._waiters: dict[str, asyncio.Event] = dict()
+        self._gates: dict[str, asyncio.Event] = dict()  # 轮间暂停的控制门
+        self._end: dict[str, bool] = dict()  # 用户是否选择提前结束
 
     def emit(self, sid: str, type_: str, data: dict) -> dict:
         ev = self.store.append_event(sid, type_, data)
@@ -53,6 +55,28 @@ class Services:
             await asyncio.wait_for(w.wait(), timeout)
         except asyncio.TimeoutError:
             pass
+
+    async def round_break(self, sid: str) -> bool:
+        """轮间暂停：等用户决定继续或结束。返回 False 表示结束；超时自动继续。"""
+        self._end[sid] = False
+        ev = self._gates.setdefault(sid, asyncio.Event())
+        ev.clear()
+        self.emit(sid, "status", {"status": "awaiting"})
+        try:
+            await asyncio.wait_for(ev.wait(), timeout=self.settings.round_break_timeout)
+            go_on = not self._end.get(sid, False)
+        except asyncio.TimeoutError:
+            go_on = True
+        self.emit(sid, "status", {"status": "running"})
+        return go_on
+
+    def continue_session(self, sid: str) -> None:
+        self._end[sid] = False
+        self._gates.setdefault(sid, asyncio.Event()).set()
+
+    def end_session(self, sid: str) -> None:
+        self._end[sid] = True
+        self._gates.setdefault(sid, asyncio.Event()).set()
 
     def active(self) -> int:
         return sum(1 for t in self.tasks.values() if not t.done())
@@ -266,6 +290,7 @@ class Debate:
         st = svc.settings
         self.opts = session.get("options") or dict()
         self.engine_on = bool(self.opts.get("quality_engine", True))
+        self.interactive = session["mode"] == "deep" and st.round_pause
         default_rounds = st.quick_rounds if session["mode"] == "quick" else st.deep_rounds
         self.rounds = max(1, min(5, int(self.opts.get("rounds") or default_rounds)))
         self.custom = self.opts.get("custom_persona")
@@ -363,11 +388,20 @@ class Debate:
         await self._search()
         await self._round_independent()
         for _ in range(self.rounds - 1):
+            if not await self._maybe_break():
+                break
             await self._round_cross()
-        await self._challenge_floor()
+        else:
+            await self._challenge_floor()
         await self._card("card.ready")
         self.svc.emit(self.sid, "status", {"status": "completed"})
         self.svc.emit(self.sid, "done", {"status": "completed"})
+
+    async def _maybe_break(self) -> bool:
+        """交互模式（deep）在轮间暂停，等用户决定继续还是结束；返回 False 表示结束。"""
+        if not self.interactive:
+            return True
+        return await self.svc.round_break(self.sid)
 
     async def _after(self) -> None:
         s = self.svc.store.get_session(self.sid)

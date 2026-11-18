@@ -13,7 +13,7 @@ from app.util import extract_json
 
 
 def make_settings(tmp_path, **kw) -> Settings:
-    return Settings(db_path=str(tmp_path / "t.db"), force_mock=True, mock_delay=0, quick_replay_delay=0, **kw)
+    return Settings(db_path=str(tmp_path / "t.db"), force_mock=True, mock_delay=0, quick_replay_delay=0, round_pause=False, **kw)
 
 
 @pytest.fixture

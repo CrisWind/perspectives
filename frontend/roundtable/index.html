@@ -567,6 +567,78 @@ function openStanceCard(id) {
   stanceCard.hidden = false;
 }
 
+// ---- 每轮结束的过场页：按方向整理论点，用户决定继续或结束 ----
+const intermission = node('div', null, 'intermission');
+intermission.hidden = true;
+intermission.append(node('div', null, 'intermission-backdrop'));
+const intermissionBody = node('div', null, 'intermission-body');
+intermission.append(intermissionBody);
+document.body.append(intermission);
+
+function openIntermission(round) {
+  const buckets = { challenge: [], support: [], neutral: [] };
+  for (const entry of speeches) {
+    if (entry.round !== round || entry.persona_id === 'user') continue;
+    for (const claim of entry.claims || []) {
+      buckets[claim.direction || 'neutral'].push({ claim, entry });
+    }
+  }
+  intermissionBody.replaceChildren();
+  const head = node('div', null, 'intermission-head');
+  head.append(node('h2', '第 ' + round + ' 轮 · 交锋小结'), node('p', '这一轮各方围绕你的倾向提出的论点与依据'));
+  intermissionBody.append(head);
+  const cols = node('div', null, 'intermission-cols');
+  const groups = [
+    ['challenge', '反对倾向', '质疑或挑战你当前倾向'],
+    ['support', '支持倾向', '支撑你当前倾向'],
+    ['neutral', '中立补充', '补充的视角或需要核实的信息'],
+  ];
+  for (const [key, title, hint] of groups) {
+    const col = node('section', null, 'intermission-col intermission-' + key);
+    col.append(node('h3', title), node('small', hint, 'intermission-hint'));
+    const list = buckets[key];
+    if (!list.length) col.append(node('p', '本轮暂无。', 'intermission-empty'));
+    for (const { claim, entry } of list) {
+      const item = node('div', null, 'intermission-item');
+      item.append(node('p', claim.text, 'intermission-claim'));
+      const by = (claim.type === 'evidence' || (claim.sources && claim.sources.length)) ? ' · 带依据' : '';
+      item.append(node('small', person(entry.persona_id).name + by, 'intermission-by'));
+      col.append(item);
+    }
+    cols.append(col);
+  }
+  intermissionBody.append(cols);
+  const actions = node('div', null, 'intermission-actions');
+  const cont = node('button', '继续下一轮', 'intermission-cont');
+  cont.type = 'button';
+  cont.addEventListener('click', resumeDebate);
+  const end = node('button', '结束会议', 'intermission-end');
+  end.type = 'button';
+  end.hidden = round < 3;
+  end.addEventListener('click', endDebate);
+  actions.append(cont, end);
+  intermissionBody.append(actions);
+  intermission.hidden = false;
+}
+
+function resumeDebate() {
+  intermission.hidden = true;
+  api('/sessions/' + session.id + '/continue', {}).catch(error => {
+    $('notice').textContent = error.message;
+    intermission.hidden = false;
+  });
+}
+
+function endDebate() {
+  intermission.hidden = true;
+  api('/sessions/' + session.id + '/end', {}).then(() => {
+    $('phase').textContent = '正在生成决策卡…';
+  }).catch(error => {
+    $('notice').textContent = error.message;
+    intermission.hidden = false;
+  });
+}
+
 function animateSpeech(entry) {
   currentStageEntry = entry;
   showActor(entry.persona_id, entry.speech, true);
@@ -797,7 +869,10 @@ function connect() {
       startedSpeakers.delete(data.persona_id);
       updateInterjectAvailability();
     },
-    'round.completed': () => { updateInterjectAvailability(); },
+    'round.completed': data => {
+      updateInterjectAvailability();
+      if (session?.mode === 'deep') openIntermission(data.round);
+    },
     'user.interjected': ({ claim }) => addSpeech({ id: 'user-' + claim.id, persona_id: 'user', speech: claim.text, claims: [claim] }),
     'quality.rejected': () => { $('notice').textContent = '质量引擎正在要求角色重写一条发言。'; },
     'card.ready': ({ card }) => renderCard(card),
@@ -861,6 +936,7 @@ function reset() {
   replyTarget = null;
   closeSidebarPanel(true);
   closeStanceCard();
+  intermission.hidden = true;
   for (const id of ['result', 'interject', 'clarify', 'target', 'handoff']) $(id).hidden = true;
   $('card').replaceChildren(node('p', '辩论结束后将生成决策卡。'));
   $('notice').textContent = '';

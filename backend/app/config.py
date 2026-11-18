@@ -39,11 +39,13 @@ class Settings:
 
     # 辩论
     team_size: int = 4
-    deep_rounds: int = 3
+    deep_rounds: int = 5
     quick_rounds: int = 2
     max_retries: int = 2
     min_challenges: int = 3
     cross_parallel: int = 0  # 交叉质询每批同时发言的角色数，0 表示整轮一起
+    round_break_timeout: float = 600.0  # 交互模式轮间暂停的等待时长，超时自动继续
+    round_pause: bool = True  # deep 模式每轮之间是否暂停等用户继续/结束（测试关闭）
     speech_limit: int = 260
     dup_hard: float = 0.72  # 字面相似度超过此值直接判重
 
@@ -81,6 +83,8 @@ class Settings:
         s.max_retries = _int("MAX_RETRIES", s.max_retries)
         s.min_challenges = _int("MIN_CHALLENGES", s.min_challenges)
         s.cross_parallel = _int("CROSS_PARALLEL", s.cross_parallel)
+        s.round_break_timeout = _float("ROUND_BREAK_TIMEOUT", s.round_break_timeout)
+        s.round_pause = _bool("ROUND_PAUSE", s.round_pause)
         s.force_mock = _bool("LLM_MOCK")
         s.persona_providers = _list("PERSONA_PROVIDERS")
         s.judge_provider = os.environ.get("JUDGE_PROVIDER", "")

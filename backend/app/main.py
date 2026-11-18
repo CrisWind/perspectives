@@ -231,6 +231,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine.start(svc, sid)
         return {"ok": True, "status": "running"}
 
+    @app.post("/api/sessions/{sid}/continue")
+    async def continue_session(sid: str, svc: Services = Depends(svc_of)):
+        """交互模式：轮间暂停后，用户选择继续下一轮。"""
+        session_or_404(svc, sid)
+        if svc.store.get_session(sid)["status"] != "awaiting":
+            raise ValueError("辩论当前不在轮间暂停状态")
+        svc.continue_session(sid)
+        return {"ok": True, "status": "running"}
+
+    @app.post("/api/sessions/{sid}/end")
+    async def end_session(sid: str, svc: Services = Depends(svc_of)):
+        """交互模式：轮间暂停后，用户选择提前结束并生成决策卡。"""
+        session_or_404(svc, sid)
+        if svc.store.get_session(sid)["status"] != "awaiting":
+            raise ValueError("辩论当前不在轮间暂停状态")
+        svc.end_session(sid)
+        return {"ok": True, "status": "running"}
+
     @app.get("/api/sessions/{sid}/events")
     async def events(
         sid: str,

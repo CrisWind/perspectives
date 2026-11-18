@@ -140,7 +140,7 @@ class Store:
 
     def interrupt_running(self) -> int:
         """服务重启时，把上次没跑完的会话标记为失败。"""
-        cur = self._exec("UPDATE sessions SET status='failed' WHERE status='running'")
+        cur = self._exec("UPDATE sessions SET status='failed' WHERE status IN ('running','awaiting')")
         return cur.rowcount
 
     # ---------- events ----------
