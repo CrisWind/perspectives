@@ -52,7 +52,7 @@ body.discussion-mode textarea:focus,body.discussion-mode input:focus{border-colo
 .meeting-participants{font-size:12px;line-height:1.9;color:var(--muted);padding:14px 0 0;margin:18px 0 0;border-top:1px solid var(--line)}
 #notice{color:var(--muted)}
 body #phase{font-size:11px;font-weight:500;background:#e9eee4;color:#50664f;border-radius:10px;padding:6px 10px;line-height:1.6}
-body.discussion-mode .speech{background:#f5f6f2;color:var(--ink);border:1px solid #e2e6df;border-left:3px solid var(--accent);border-radius:16px;padding:16px;margin-bottom:12px}
+body.discussion-mode .speech{background:color-mix(in srgb,var(--accent,#e5ecdf) 14%,#fff);color:var(--ink);border:1px solid #e2e6df;border-left:3px solid var(--accent);border-radius:16px;padding:16px;margin-bottom:12px}
 .speech strong{font-weight:750}.speech small{color:var(--muted)}.speech p{font-size:14px;line-height:1.9}
 body.discussion-mode .feed>p{color:var(--muted);line-height:1.8}
 body.discussion-mode :is(.trace,#card button,.filters button,.speech button){display:inline-block;background:#fffefa;border:1px solid var(--line);color:#51675a;border-radius:12px;padding:7px 10px;margin:4px 5px 0 0;font-size:11px;line-height:1.6;text-decoration:none}
@@ -61,8 +61,8 @@ body.discussion-mode .filters{gap:2px;margin-bottom:16px}
 #card>section{padding:18px;border:1px solid #e1e5dc;border-radius:18px;background:#f5f6f0;margin-top:12px}
 #card>section:nth-child(2){background:#f3eff4}#card>section:nth-child(3){background:#f5f0e9}
 #card h3{font-size:15px;font-weight:750;margin:0 0 10px}#card p{font-size:14px;line-height:1.9;margin:6px 0;color:var(--ink)}
-body.discussion-mode .stage-caption{width:100%;min-height:94px;margin:12px 0 0;padding:18px;border-radius:18px;background:#f5f6f2;border:1px solid #e1e5dc;box-shadow:none;color:var(--ink);text-align:left;gap:14px}
-body.discussion-mode .stage-caption strong{background:#e5ecdf;color:#40583e;padding:7px 10px;border-radius:12px;font-size:12px;line-height:1.5;font-weight:650}
+body.discussion-mode .stage-caption{width:100%;min-height:94px;margin:12px 0 0;padding:18px;border-radius:18px;background:color-mix(in srgb,var(--caption-color,#e5ecdf) 16%,#fff);border:1px solid #e1e5dc;box-shadow:none;color:var(--ink);text-align:left;gap:14px}
+body.discussion-mode .stage-caption strong{background:var(--caption-color,#e5ecdf);color:#40583e;padding:7px 10px;border-radius:12px;font-size:12px;line-height:1.5;font-weight:650}
 body.discussion-mode .stage-caption p{color:var(--ink);font-size:14px;line-height:1.8;max-height:6em;margin:3px 0 0;text-align:left}
 body.discussion-mode .stage-caption[data-state=idle] p,body.discussion-mode .stage-caption[data-state=waiting] p{color:var(--muted)}
 body.discussion-mode .stage-actions{width:100%;margin:12px 0 0;gap:10px;flex-wrap:wrap}
@@ -85,7 +85,7 @@ body.discussion-mode .flash{outline-color:var(--accent)}
 .meeting-scene{display:grid;isolation:isolate;min-width:0;overflow:hidden;border:1px solid #dfd6ca;border-radius:18px;background:#f5f3ed}
 body.discussion-mode .meeting-scene>.theater{grid-area:1/1;align-self:start;width:100%;border:0;border-radius:0;overflow:hidden}
 .meeting-console{grid-area:1/1;align-self:start;min-width:0;z-index:10;margin-top:50%;padding:12px;background:#fffefaed;backdrop-filter:blur(8px);border-top:1px solid #ffffffa6}
-body.discussion-mode .meeting-console .stage-caption{margin:0;min-height:64px;padding:12px 16px;background:#f0f2ebd9;grid-template-columns:auto minmax(0,1fr);gap:12px}
+body.discussion-mode .meeting-console .stage-caption{margin:0;min-height:64px;padding:12px 16px;background:color-mix(in srgb,var(--caption-color,#e5ecdf) 18%,#fff);grid-template-columns:auto minmax(0,1fr);gap:12px}
 body.discussion-mode .meeting-console .stage-caption p{margin:0;max-height:5.4em;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 body.discussion-mode .meeting-console .stage-actions{margin-top:10px}
 body.discussion-mode .meeting-console .table-controls{margin-top:10px}

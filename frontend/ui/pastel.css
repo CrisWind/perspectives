@@ -9,9 +9,9 @@ h1{font-size:52px;line-height:1.4}h2{font-size:30px;line-height:1.55}
 .hero-art .orbit{border-color:#cad7cf90}.hero-art .orbit:after{border-color:#cad7cf70}.hero-figure img{filter:drop-shadow(0 10px 12px #4a5b4510)}
 .button,.round,.chip,.text-button,.nav-sample{transition:background .18s ease,box-shadow .18s ease,transform .18s ease,color .18s ease}
 .button{border-radius:18px;background:#fffefb;box-shadow:0 3px 12px #424f4505;font-weight:650;min-height:44px;gap:16px}
-.button.primary{color:#fcfdfb;background:var(--accent);border-color:var(--accent);box-shadow:0 5px 16px #516b6017}
+.button.primary{color:#fcfdfb;background:var(--accent);border-color:var(--accent);box-shadow:0 5px 16px #516b6017}.button.secondary{color:#fcfdfb;background:var(--warm);border-color:var(--warm);box-shadow:0 5px 16px #85735d1a}
 .button:hover:not(:disabled),.round:hover,.chip:hover{transform:translateY(-2px);box-shadow:0 6px 18px #424f4510}
-.button.primary:hover:not(:disabled){background:#435e52}.button:active:not(:disabled),.round:active{transform:translateY(0)}
+.button.primary:hover:not(:disabled){background:#435e52}.button.secondary:hover:not(:disabled){background:#6f5f4b}.button:active:not(:disabled),.round:active{transform:translateY(0)}
 .button.small{border-radius:16px}.round{background:#fffefb;color:var(--ink);border-color:var(--line);box-shadow:0 3px 12px #424f4505;width:44px;height:44px}
 .steps{padding:20px 0;gap:16px;border:0}.step{border:1px solid #e3e6e1;border-radius:20px;padding:22px 18px;background:#f0f2ed;box-shadow:var(--shadow);gap:14px}
 .step:nth-child(2){background:#f2eff4}.step:nth-child(3){background:#f5f0e9}.step h3{font-weight:750}.step-num{color:#788173;font-size:25px}

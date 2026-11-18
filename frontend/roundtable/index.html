@@ -345,7 +345,7 @@ body.discussion-mode .roundtable-sidebar .panel .result{margin:0}
 .panel-close:hover{background:#264960}
 @media(max-width:760px){body.discussion-mode main{width:calc(100% - 26px);grid-template-columns:minmax(0,1fr);gap:12px}body.discussion-mode .roundtable-sidebar{grid-column:1;grid-row:1}.sidebar-nav{position:static;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:7px}.sidebar-nav-title{display:none}.sidebar-nav button{grid-template-columns:1fr;justify-items:center;gap:2px;min-height:55px;padding:6px 3px;text-align:center;font-size:11px}.nav-index{font-size:9px}.nav-arrow{display:none}body.discussion-mode .arena{grid-column:1;grid-row:2;width:100%}body.discussion-mode .roundtable-sidebar .panel{padding:19px}body.discussion-mode .roundtable-sidebar .panel h2{font-size:20px}}
 @media(prefers-reduced-motion:reduce){.sidebar-scrim,body.discussion-mode .roundtable-sidebar .panel{transition:none!important}}
-</style><link rel="stylesheet" href="roundtable.css"><link rel="stylesheet" href="ui/theme.css?revision=8"><link rel="stylesheet" href="ui/meeting-shell.css?revision=8"></head>
+</style><link rel="stylesheet" href="roundtable.css"><link rel="stylesheet" href="ui/theme.css?revision=8"><link rel="stylesheet" href="ui/meeting-shell.css?revision=9"></head>
 <body><header class="meeting-header"><a href="/" class="brand" aria-label="Perspectives 返回首页"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="12" cy="16" r="9"/><circle cx="20" cy="16" r="9"/></svg>Perspectives</a><span id="connection" role="status">正在连接辩论服务…</span></header>
 <main><section class="arena"><div class="stage-copy"><h1><span data-line style="--delay:.12s">Your dilemma</span><br><span data-line style="--delay:.24s">just got <em>company.</em></span></h1><p data-intro style="--delay:.42s">说出你的纠结，看四位辩手怎么接招。</p><button class="enter" id="enter" data-intro style="--delay:.56s" type="button">Meet Your Council <span aria-hidden="true">↗</span></button></div><div class="scenery" aria-hidden="true"><i></i></div><div class="theater"><div class="opening"><p id="entrance" class="entrance" aria-label="Four People Walk Into Your Head."><span aria-hidden="true">Four people</span> <span aria-hidden="true">walk into</span> <em aria-hidden="true">your head.</em></p><button id="replay-intro" class="replay-intro" type="button" aria-label="重播角色开场">↻</button></div><aside class="topic-card" aria-label="舞台议题"><span id="topic-label">示例议题</span><p id="stage-topic">考研还是直接工作？</p></aside><div id="handoff" class="handoff" aria-hidden="true" hidden></div><div class="constellation" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="cast" id="cast" aria-label="出场角色"></div><div class="camera-controls" aria-label="舞台视角"><button type="button" id="camera-left" aria-label="从左侧看">←</button><button type="button" id="camera-center" aria-label="回到正面">◎</button><button type="button" id="camera-right" aria-label="从右侧看">→</button></div></div></section>
 <aside class="roundtable-sidebar" aria-label="辩论信息"><div class="work"><section class="panel" id="brief"><h2>你在纠结什么？</h2><form id="dilemma-form"><label for="dilemma">你的难题</label><textarea id="dilemma" required maxlength="2500" placeholder="比如：我该二战考研，还是先工作？"></textarea><label for="leaning">目前倾向（选填）</label><input id="leaning" maxlength="200" placeholder="我现在更倾向于……"><label for="mbti">我的 MBTI（选填）</label><select id="mbti"><option value="">不确定</option></select><label for="reasons">你这么想的理由（选填，每行一条）</label><textarea id="reasons" rows="2" maxlength="2000" placeholder="读研可能让我有更多选择"></textarea><div class="actions"><button class="primary" type="submit">发起辩论 ↗</button><select id="preset" aria-label="预设难题"><option value="grad_or_job">考研还是直接工作</option></select><button id="quick" type="button">播放示例辩论</button></div></form><form id="clarify" hidden><h3>Sorry, We Have Questions.</h3><p class="clarify-hint">开辩前，一起确认你的理由。</p><div id="questions"></div><label for="review">确认理由清单（每行一条）</label><textarea id="review" rows="3"></textarea><button type="submit" class="primary">确认并开辩 ↗</button></form><p id="notice" role="status"></p></section>
@@ -428,6 +428,10 @@ function person(id) {
   if (id === 'user') return { name: '你', color: '#dfff62' };
   const role = team.find(item => item.id === id) || {};
   return { name: names[id] || role.name || '辩手', cue: role.framework?.name || role.tagline, color: role.color || '#cab8ff', ...designs[id] };
+}
+function speechColor(id) {
+  const role = team.find(item => item.id === id) || {};
+  return role.sage ? '#b8bcb6' : person(id).color;
 }
 
 function cast() {
@@ -521,6 +525,7 @@ function animateSpeech(entry) {
   const caption = document.querySelector('.stage-caption');
   if (caption) {
     caption.dataset.state = 'speech';
+    caption.style.setProperty('--caption-color', speechColor(entry.persona_id));
     caption.replaceChildren(node('strong', person(entry.persona_id).name), node('p', entry.speech));
   }
   updateInterjectAvailability();
@@ -599,7 +604,7 @@ function renderFeed() {
     const line = node('article', null, 'speech');
     line.id = entry.id;
     line.tabIndex = -1;
-    line.style.setProperty('--accent', role.color);
+    line.style.setProperty('--accent', speechColor(entry.persona_id));
     line.append(node('strong', role.name), node('small', ' · ' + (roundLabels[entry.kind] || '用户插话')), node('p', entry.speech));
     if (team.find(item => item.id === entry.persona_id)?.sage) {
       line.append(node('small', '基于思想的模拟，不是本人对现代问题的发言'));
@@ -611,7 +616,7 @@ function renderFeed() {
       const source = claims.get(stance.persuaded_by);
       if (source) line.append(button('查看说服他的论点', () => reveal(source.entry.id)));
     }
-    for (const claim of entry.claims || []) {
+    for (const [index, claim] of (entry.claims || []).entries()) {
       const target = claims.get(claim.targets);
       if (target) {
         const type = { rebuttal: '反驳', support: '支持', evidence: '补证据' }[claim.type] || '回应';
@@ -628,7 +633,7 @@ function renderFeed() {
           line.append(link);
         } catch { /* Invalid source URL. */ }
       }
-      if (entry.persona_id === 'user') continue;
+      if (entry.persona_id === 'user' || index !== 0) continue;
       line.append(button('回应这条', () => {
         replyTarget = claim;
         $('target-text').textContent = '回应 ' + role.name + '：' + claim.text;
@@ -807,6 +812,7 @@ function reset() {
   const caption = document.querySelector('.stage-caption');
   if (caption) {
     caption.dataset.state = 'idle';
+    caption.style.removeProperty('--caption-color');
     caption.replaceChildren(node('strong', '等待开场'), node('p', '提交议题后，四位嘉宾会围绕它展开讨论。'));
   }
   renderReasons();

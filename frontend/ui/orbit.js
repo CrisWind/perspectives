@@ -48,8 +48,8 @@
   pause.onclick = () => { userPaused = !userPaused; updatePause(); };
   document.getElementById('orbit-prev').onclick = () => move(-1);
   document.getElementById('orbit-next').onclick = () => move(1);
-  stage.addEventListener('pointerenter', e => { if (e.pointerType !== 'touch') hovered = true; });
-  stage.addEventListener('pointerleave', () => { hovered = false; });
+  stage.addEventListener('pointerover', e => { if (e.pointerType !== 'touch' && e.target.closest('.orbit-personality')) hovered = true; });
+  stage.addEventListener('pointerout', e => { if (e.pointerType !== 'touch' && !(e.relatedTarget && e.relatedTarget.closest('.orbit-personality'))) hovered = false; });
   stage.addEventListener('focusin', () => { focused = true; });
   stage.addEventListener('focusout', e => { focused = stage.contains(e.relatedTarget); });
   stage.addEventListener('keydown', e => {
