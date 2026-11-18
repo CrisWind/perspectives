@@ -45,7 +45,7 @@ function syncStage() {
   updateInterjectAvailability();
 }
 function presentNext() {
-  if (!stageQueue.length) { presentationState = 'gap'; interjectGap = hasGuestSpeech; syncStage(); return; }
+  if (!stageQueue.length) { presentationState = 'gap'; interjectGap = hasGuestSpeech; syncStage(); maybeOpenIntermission(); return; }
   presentationState = 'speech';
   interjectGap = false;
   animateSpeech(stageQueue.shift());
